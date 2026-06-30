@@ -59,6 +59,23 @@ let currentUser: User | null = null;
 
 // Helper to check and parse stored config
 export const getStoredFirebaseConfig = (): any | null => {
+  // Check if environment variables are provided first, else fall back to default hardcoded config
+  const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+  const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  
+  if (envApiKey && envProjectId) {
+    return {
+      apiKey: envApiKey,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${envProjectId}.firebaseapp.com`,
+      databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || `https://${envProjectId}-default-rtdb.asia-southeast1.firebasedatabase.app`,
+      projectId: envProjectId,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${envProjectId}.firebasestorage.app`,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+      appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+      measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || ''
+    };
+  }
+
   // Static configuration hardcoded securely as requested to avoid any conflicts
   return {
     apiKey: "AIzaSyDfIvUOLqAULR9eKy0rkqJfY_99Q4rxy2M",

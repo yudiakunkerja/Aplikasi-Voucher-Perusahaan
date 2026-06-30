@@ -902,7 +902,6 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
     e.preventDefault();
 
     if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
 
     // Validation
     if (!dibayarkanKepada.trim()) {
@@ -930,6 +929,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
       return;
     }
 
+    isSubmittingRef.current = true;
     setValidationError('');
     setIsSaving(true);
     setSaveProgress('Menyiapkan parameter unggahan...');
