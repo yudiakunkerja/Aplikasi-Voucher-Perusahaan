@@ -334,7 +334,11 @@ export const getUserProfileFromFirestore = async (uid: string): Promise<any> => 
     const docRef = doc(firestoreDb, 'users', uid);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data();
+      const data = snap.data();
+      if (data?.companyId) {
+        setActiveCompanyId(data.companyId);
+      }
+      return data;
     }
   } catch (err) {
     console.warn('Silent read rejection - failed to fetch user profile:', err);
@@ -342,13 +346,32 @@ export const getUserProfileFromFirestore = async (uid: string): Promise<any> => 
   return null;
 };
 
+let activeCompanyId: string = 'nmsa';
+export const getActiveCompanyId = () => activeCompanyId;
+export const setActiveCompanyId = (id: string) => {
+  activeCompanyId = id.toLowerCase().trim();
+};
+
 export const getCompanyProfileFromFirestore = async (companyId: string): Promise<any> => {
   if (!isFirebaseConfigured() || !firestoreDb) return null;
+  const cleanId = companyId.toLowerCase().trim();
+  setActiveCompanyId(cleanId);
   try {
-    const docRef = doc(firestoreDb, 'companies', companyId.toLowerCase().trim());
+    const docRef = doc(firestoreDb, 'companies', cleanId);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data();
+      const data = snap.data();
+      // Auto-load shared Google Drive settings from Firestore to achieve zero-friction default connection!
+      if (Array.isArray(data.googleDrives) && data.googleDrives.length > 0) {
+        console.log('🔄 Auto-loaded company-shared Google Drive settings from Firestore:', data.googleDrives.length, 'drives');
+        localStorage.setItem('NUSANTARA_CONNECTED_DRIVES', JSON.stringify(data.googleDrives));
+        const activeDrive = data.googleDrives.find((d: any) => !d.isExpired && (d.quotaLimit - d.quotaUsed > 10 * 1024 * 1024));
+        const bestToken = activeDrive ? activeDrive.accessToken : (data.googleDrives[0]?.accessToken || null);
+        if (bestToken) {
+          localStorage.setItem('NUSANTARA_GOOGLE_DRIVE_TOKEN', bestToken);
+        }
+      }
+      return data;
     }
   } catch (err) {
     console.warn('Silent read rejection - failed to fetch company profile:', err);
@@ -598,13 +621,23 @@ export const getConnectedDrives = (): ConnectedDrive[] => {
   return [];
 };
 
-export const saveConnectedDrives = (drives: ConnectedDrive[]) => {
+export const saveConnectedDrives = async (drives: ConnectedDrive[]) => {
   try {
     localStorage.setItem('NUSANTARA_CONNECTED_DRIVES', JSON.stringify(drives));
     // Synced with legacy single token to maintain maximum compatibility with existing code
     const activeDrive = drives.find(d => !d.isExpired && (d.quotaLimit - d.quotaUsed > 10 * 1024 * 1024));
     const bestToken = activeDrive ? activeDrive.accessToken : (drives[0]?.accessToken || null);
     setGoogleDriveToken(bestToken);
+
+    // Persist to Firestore under company document to share with all users of this company!
+    if (firestoreDb && activeCompanyId) {
+      const companyRef = doc(firestoreDb, 'companies', activeCompanyId);
+      await setDoc(companyRef, {
+        googleDrives: cleanUndefined(drives),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      console.log(`☁️ Synced Google Drive credentials to Firestore for company: ${activeCompanyId}`);
+    }
   } catch (e) {
     console.error('Failed to save connected drives list', e);
   }
