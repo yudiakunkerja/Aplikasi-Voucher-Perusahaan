@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Submission, ActivityLog } from '../types';
 import { formatRupiah, formatDateIndonesian } from '../utils';
-import { Search, Eye, Edit2, Trash2, Calendar, MapPin, DollarSign, Plus, Copy, RefreshCw, Cloud, FileText, Database, History, FileSpreadsheet, CheckCircle, AlertCircle, Printer, Check, ExternalLink, Coins, User } from 'lucide-react';
+import { Search, Eye, Edit2, Trash2, Calendar, MapPin, DollarSign, Plus, Copy, RefreshCw, Cloud, FileText, Database, History, FileSpreadsheet, CheckCircle, AlertCircle, Printer, Check, ExternalLink, Coins, User, Bell } from 'lucide-react';
 import { loadActivityLogsFromFirestore, isFirebaseConfigured } from '../firebase';
 
 interface SubmissionsListProps {
@@ -13,6 +13,7 @@ interface SubmissionsListProps {
   onAddNew: () => void;
   onOpenBuktiTransfer?: () => void;
   userProfile?: any;
+  onMarkAsPaid?: (id: string) => void;
 }
 
 export const SubmissionsList: React.FC<SubmissionsListProps> = ({
@@ -24,6 +25,7 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
   onAddNew,
   onOpenBuktiTransfer,
   userProfile,
+  onMarkAsPaid,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('All');
@@ -73,6 +75,23 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logsSearchTerm, setLogsSearchTerm] = useState('');
   const [logsTab, setLogsTab] = useState<'all' | 'deletions' | 'missing_analysis'>('all');
+
+  const [isReminderOpen, setIsReminderOpen] = useState(false);
+
+  // Helper to check if an unpaid transaction is older than 1 week (7 days)
+  const isEligibleForManualPaymentMark = (sub: Submission) => {
+    const subStatus = sub.status || (sub.dibayarkanDengan === 'Cek/Transfer' ? 'Lunas' : 'Belum Lunas');
+    if (subStatus !== 'Belum Lunas') return false;
+    
+    if (!sub.tanggal) return false;
+    const subDate = new Date(sub.tanggal);
+    const today = new Date();
+    subDate.setHours(0,0,0,0);
+    today.setHours(0,0,0,0);
+    const diffTime = today.getTime() - subDate.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 7;
+  };
 
   // Fetch activity logs when audit logs tab is open
   const reloadLogs = () => {
@@ -1190,6 +1209,21 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
                               <Edit2 size={16} />
                             </button>
 
+                            {onMarkAsPaid && isEligibleForManualPaymentMark(sub) && (
+                              <button
+                                title="Tandai Sudah Dibayar (Lunas tanpa bukti fisik)"
+                                onClick={() => {
+                                  if (window.confirm(`Yakin ingin menandai voucher ${sub.kode} untuk "${sub.dibayarkanKepada}" sebagai SUDAH DIBAYAR (Lunas) tanpa bukti bayar fisik? (Karena umur transaksi sudah lebih dari 1 minggu)`)) {
+                                    onMarkAsPaid(sub.id);
+                                  }
+                                }}
+                                id={`btn-markpaid-${sub.id}`}
+                                className="p-2 hover:bg-teal-50 border border-transparent hover:border-teal-200 text-teal-600 hover:text-teal-850 rounded-xl transition cursor-pointer shadow-3xs"
+                              >
+                                <CheckCircle size={16} />
+                              </button>
+                            )}
+
                             <button
                               title="Hapus Data"
                               onClick={() => {
@@ -1288,6 +1322,20 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
                       >
                         <Trash2 size={13} />
                       </button>
+
+                      {onMarkAsPaid && isEligibleForManualPaymentMark(selectedSub) && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Yakin ingin menandai voucher ${selectedSub.kode} sebagai SUDAH DIBAYAR (Lunas) tanpa bukti fisik? (Karena umur transaksi sudah lebih dari 1 minggu)`)) {
+                              onMarkAsPaid(selectedSub.id);
+                            }
+                          }}
+                          className="p-1 hover:bg-emerald-850 text-teal-400 hover:text-teal-300 rounded cursor-pointer transition flex items-center justify-center"
+                          title="Tandai Sudah Dibayar (Lunas)"
+                        >
+                          <CheckCircle size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -2420,6 +2468,21 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
                                       <span className="text-[9px]">Bayar</span>
                                     </button>
                                   )}
+
+                                  {onMarkAsPaid && isEligibleForManualPaymentMark(sub) && (
+                                    <button
+                                      onClick={() => {
+                                        if (window.confirm(`Yakin ingin menandai voucher ${sub.kode} untuk "${sub.dibayarkanKepada}" sebagai SUDAH DIBAYAR (Lunas) tanpa bukti fisik? (Karena umur transaksi sudah lebih dari 1 minggu)`)) {
+                                          onMarkAsPaid(sub.id);
+                                        }
+                                      }}
+                                      className="p-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg transition font-extrabold flex items-center justify-center gap-0.5"
+                                      title="Tandai Sudah Dibayar (Lunas tanpa bukti fisik)"
+                                    >
+                                      <CheckCircle size={11} className="text-teal-600" />
+                                      <span className="text-[9px]">Tandai Lunas</span>
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3283,6 +3346,130 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Unpaid Transactions Daily Reminder Button and Dialog */}
+      {allUnpaidSubmissionsAllTime.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 print:hidden font-sans">
+          {/* Floating Button */}
+          <button
+            onClick={() => setIsReminderOpen(!isReminderOpen)}
+            className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold p-3.5 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer relative group"
+            title="Pengingat Transaksi Belum Dibayar"
+          >
+            <Bell size={22} className="animate-bounce" />
+            <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-in-out font-bold text-xs whitespace-nowrap">
+              Pengingat Bayar ({allUnpaidSubmissionsAllTime.length})
+            </span>
+            {/* Notification Badge */}
+            <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-stone-950 text-[10px] font-black h-5 w-5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-pulse">
+              {allUnpaidSubmissionsAllTime.length}
+            </span>
+          </button>
+
+          {/* Dialog Panel */}
+          {isReminderOpen && (
+            <div className="absolute bottom-16 right-0 w-[380px] max-w-[calc(100vw-2rem)] bg-stone-900 text-stone-100 border border-stone-850 shadow-2xl rounded-2xl p-4.5 flex flex-col space-y-4 animate-fade-in z-50">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
+                  <span className="font-extrabold text-xs tracking-wider uppercase text-rose-400">
+                    Kewajiban Belum Dibayar
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsReminderOpen(false)}
+                  className="text-stone-400 hover:text-white text-xs font-bold font-mono bg-stone-800 px-2 py-0.5 rounded transition cursor-pointer"
+                >
+                  TUTUP
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-[11px] text-stone-400 font-medium">
+                  Terdapat <strong className="text-stone-100">{allUnpaidSubmissionsAllTime.length} transaksi</strong> yang memerlukan penyelesaian pembayaran:
+                </p>
+                <div className="bg-stone-950/50 p-2 border border-stone-850 rounded-xl text-stone-300 flex justify-between items-center text-xs font-mono">
+                  <span>TOTAL OUTSTANDING:</span>
+                  <span className="font-bold text-rose-400">
+                    Rp {formatRupiah(allUnpaidSubmissionsAllTime.reduce((sum, s) => sum + s.items.reduce((acc, i) => acc + i.total, 0), 0))}
+                  </span>
+                </div>
+              </div>
+
+              {/* Scrollable List */}
+              <div className="max-h-[260px] overflow-y-auto divide-y divide-stone-800/60 pr-1 space-y-2">
+                {allUnpaidSubmissionsAllTime.map((sub) => {
+                  const subTotal = sub.items.reduce((sum, i) => sum + i.total, 0);
+                  const isOld = isEligibleForManualPaymentMark(sub);
+                  
+                  // Calculate days outstanding
+                  let ageDays = 0;
+                  if (sub.tanggal) {
+                    const subDate = new Date(sub.tanggal);
+                    const today = new Date();
+                    subDate.setHours(0,0,0,0);
+                    today.setHours(0,0,0,0);
+                    ageDays = Math.floor((today.getTime() - subDate.getTime()) / (1000 * 60 * 60 * 24));
+                  }
+
+                  return (
+                    <div key={sub.id} className="pt-2 flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-mono text-[10px] font-extrabold text-stone-400 truncate" title={sub.kode}>
+                            {sub.kode}
+                          </div>
+                          <div className="font-extrabold text-stone-200 mt-0.5 truncate" title={sub.dibayarkanKepada}>
+                            {sub.dibayarkanKepada}
+                          </div>
+                        </div>
+                        <div className="text-right whitespace-nowrap font-mono text-stone-200 font-extrabold">
+                          Rp {formatRupiah(subTotal)}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className={`font-mono font-bold ${isOld ? 'text-rose-450' : 'text-stone-400'}`}>
+                          📅 {sub.tanggal} ({ageDays} hari lalu) {isOld && '⚠️ >1 Minggu'}
+                        </span>
+
+                        <div className="flex items-center gap-1.5">
+                          {/* Eye button to view detail */}
+                          <button
+                            onClick={() => {
+                              onSelect(sub);
+                              setIsReminderOpen(false);
+                            }}
+                            className="px-2 py-1 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded hover:text-white transition font-bold cursor-pointer"
+                            title="Tinjau Voucher"
+                          >
+                            Tinjau
+                          </button>
+
+                          {/* Quick Mark as Paid Button */}
+                          {onMarkAsPaid && isOld && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Yakin ingin menandai voucher ${sub.kode} sebagai SUDAH DIBAYAR (Lunas) tanpa bukti fisik? (Karena umur transaksi sudah lebih dari 1 minggu)`)) {
+                                  onMarkAsPaid(sub.id);
+                                }
+                              }}
+                              className="px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded font-extrabold transition cursor-pointer"
+                              title="Tandai Sudah Dibayar"
+                            >
+                              Bayar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -468,8 +468,14 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
 
   // Sync payment status state with payment proof file presence
   useEffect(() => {
-    setStatus((buktiPembayaranFile || buktiPembayaranDrive) ? 'Lunas' : 'Belum Lunas');
-  }, [buktiPembayaranFile, buktiPembayaranDrive]);
+    if (buktiPembayaranFile || buktiPembayaranDrive) {
+      setStatus('Lunas');
+    } else if (initialSubmission && initialSubmission.status === 'Lunas') {
+      setStatus('Lunas'); // Preserve manual lunas marking when editing
+    } else {
+      setStatus('Belum Lunas');
+    }
+  }, [buktiPembayaranFile, buktiPembayaranDrive, initialSubmission]);
 
   // Check Drive connection status
   useEffect(() => {
@@ -1462,12 +1468,12 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
       }));
 
       // Ensure the Lunas status is determined strictly by the presence of a payment proof document
-      // uploaded on the dedicated "bukti pembayaran" uploader menu.
+      // uploaded on the dedicated "bukti pembayaran" uploader menu, or if previously marked as paid.
       const isLunas = !!(
         finalBuktiPembayaran ||
         buktiPembayaranFile ||
         buktiPembayaranDrive
-      );
+      ) || (initialSubmission?.status === 'Lunas');
 
       const payload: Submission = {
         id: id || `sub-${Date.now()}`,

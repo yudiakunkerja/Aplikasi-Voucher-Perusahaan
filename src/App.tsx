@@ -403,6 +403,51 @@ export default function App() {
     setView('list');
   };
 
+  // Mark unpaid old submission as paid (Lunas) without attachment proof
+  const handleMarkAsPaid = async (id: string) => {
+    const updatedList = submissions.map((sub) => {
+      if (sub.id === id) {
+        return {
+          ...sub,
+          status: 'Lunas' as const,
+        };
+      }
+      return sub;
+    });
+
+    saveSubmissionsToStorage(updatedList);
+
+    const targetSub = submissions.find((sub) => sub.id === id);
+    if (targetSub) {
+      const updatedSub = {
+        ...targetSub,
+        status: 'Lunas' as const,
+      };
+
+      if (isFirebaseConfigured()) {
+        try {
+          await saveSubmissionToFirestore(updatedSub, userProfile?.companyId, userProfile?.companyName);
+        } catch (err) {
+          console.warn('Silent fallback: cloud status update rejected', err);
+        }
+      }
+
+      try {
+        const totalVal = targetSub.items.reduce((sum, item) => sum + item.total, 0);
+        await saveActivityLogToFirestore(
+          'pay_submission',
+          `Menandai voucher ${targetSub.kode} untuk ${targetSub.dibayarkanKepada} senilai Rp ${totalVal.toLocaleString('id-ID')} sebagai SUDAH DIBAYAR (Lunas) tanpa bukti transfer/bayar fisik karena data lama/hilang.`,
+          'success',
+          id,
+          targetSub.kode,
+          userProfile
+        );
+      } catch (logErr) {
+        console.warn('Gagal mencatat log penandaan lunas:', logErr);
+      }
+    }
+  };
+
   // Central Logout Handler
   const handleLogout = async () => {
     try {
@@ -815,6 +860,7 @@ export default function App() {
                 setView('form');
               }}
               onOpenBuktiTransfer={() => navigateTo('#/input-bukti-transfer')}
+              onMarkAsPaid={handleMarkAsPaid}
             />
 
             {/* Backup / Export-Import Section */}
