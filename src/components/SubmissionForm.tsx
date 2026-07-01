@@ -1009,6 +1009,59 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);
         console.log('[Drive Upload] Folder Transaksi Khusus ID:', targetFolderId);
 
+        // Move existing files if the folder ID has changed (e.g., date/metadata modified)
+        const oldFolderId = (initialSubmission as any)?.googleDriveFolderId;
+        if (oldFolderId && oldFolderId !== targetFolderId) {
+          setSaveProgress('Memindahkan berkas-berkas lama ke folder tanggal baru...');
+          try {
+            const listRes = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+                `'${oldFolderId}' in parents and trashed = false`
+              )}&fields=files(id,name,mimeType)&pageSize=100`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+
+            if (listRes.ok) {
+              const listData = await listRes.json();
+              const filesToMove = listData.files || [];
+              console.log('[Drive Move] Files found in old folder to move:', filesToMove);
+
+              for (const file of filesToMove) {
+                // Skip files we're going to regenerate anyway (like F1 & F2) to avoid unnecessary move calls
+                if (file.name.startsWith('F1 - (') || file.name.startsWith('F2 - (')) {
+                  continue;
+                }
+                setSaveProgress(`Memindahkan "${file.name}" ke folder baru...`);
+                await fetch(
+                  `https://www.googleapis.com/drive/v3/files/${file.id}?addParents=${targetFolderId}&removeParents=${oldFolderId}`,
+                  {
+                    method: 'PATCH',
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      'Content-Type': 'application/json',
+                    },
+                  }
+                );
+              }
+
+              // Delete the old folder since it is now empty/obsolete
+              console.log('[Drive Move] Deleting old empty folder:', oldFolderId);
+              await fetch(`https://www.googleapis.com/drive/v3/files/${oldFolderId}`, {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+            }
+          } catch (moveErr) {
+            console.error('Error moving files to new folder:', moveErr);
+          }
+        }
+
         // Define reusable upload function to avoid duplicates
         const uploadFileToFolder = async (
           fileName: string,

@@ -843,174 +843,181 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   return (
     <div className="space-y-6">
       {/* Tab Controls / Print Actions */}
-      <div className="p-4 bg-white rounded-2xl border border-stone-250 shadow-xs flex flex-col lg:flex-row items-center justify-between gap-4 print:hidden">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            id="btn-print-back"
-            className="p-1.5 hover:bg-stone-100 text-stone-500 hover:text-stone-850 rounded-lg transition"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="space-y-0.5">
-            <h3 className="font-bold text-stone-900">Preview & Cetak Dokumen</h3>
-            <p className="text-xs text-stone-400">Pilih format cetak di bawah dan tekan tombol cetak.</p>
+      <div className="bg-white rounded-2xl border border-stone-250 shadow-xs p-5 space-y-4 print:hidden">
+        {/* Row 1: Title block & Action buttons */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-stone-100">
+          <div className="flex items-center gap-3 text-left">
+            <button
+              onClick={onBack}
+              id="btn-print-back"
+              className="p-2 hover:bg-stone-100 text-stone-500 hover:text-stone-900 rounded-xl transition cursor-pointer"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div className="space-y-0.5">
+              <h3 className="font-display font-black text-stone-900 text-lg leading-tight">Preview & Cetak Dokumen</h3>
+              <p className="text-xs text-stone-500">Sesuaikan format cetak berkas dan bagikan tautan transaksi terpadu Anda.</p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2.5 shrink-0 w-full sm:w-auto">
+            <button
+              onClick={() => setIsShareModalOpen(true)}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-3xs text-sm shrink-0"
+            >
+              <Share2 size={16} />
+              <span>Bagikan Transaksi</span>
+            </button>
+            
+            <button
+              onClick={handlePrint}
+              id="btn-print-document"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-stone-900 hover:bg-stone-850 text-white font-bold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-3xs text-sm shrink-0"
+            >
+              <Printer size={16} />
+              <span>Cetak PDF / A4</span>
+            </button>
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="flex bg-stone-100 p-1 rounded-xl border border-stone-200 flex-wrap gap-1">
-          <button
-            onClick={() => setActiveTab('both')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
-              activeTab === 'both' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-550 hover:text-stone-955'
-            }`}
-          >
-            <Layers size={13} />
-            {attachmentFiles.length > 0 ? `Cetak Semua (${isLoadingPages ? '...' : totalPagesCount} Hal)` : 'Cetak Dua Halaman'}
-          </button>
-          <button
-            onClick={() => setActiveTab('pengajuan')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
-              activeTab === 'pengajuan' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-550 hover:text-stone-955'
-            }`}
-          >
-            <FileText size={13} />
-            Hanya Formulir Pengajuan
-          </button>
-          <button
-            onClick={() => setActiveTab('pengeluaran')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
-              activeTab === 'pengeluaran' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-550 hover:text-stone-955'
-            }`}
-          >
-            <CheckCircle size={13} />
-            Hanya Bukti Pengeluaran
-          </button>
+        {/* Row 2: Tab Selection & Status Lampiran */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          {/* Tab Selection */}
+          <div className="flex bg-stone-100 p-1 rounded-xl border border-stone-200 flex-wrap gap-1">
+            <button
+              onClick={() => setActiveTab('both')}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                activeTab === 'both' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-550 hover:text-stone-955'
+              }`}
+            >
+              <Layers size={13} />
+              {attachmentFiles.length > 0 ? `Cetak Semua (${isLoadingPages ? '...' : totalPagesCount} Hal)` : 'Cetak Dua Halaman'}
+            </button>
+            <button
+              onClick={() => setActiveTab('pengajuan')}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                activeTab === 'pengajuan' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-550 hover:text-stone-955'
+              }`}
+            >
+              <FileText size={13} />
+              Hanya Formulir Pengajuan
+            </button>
+            <button
+              onClick={() => setActiveTab('pengeluaran')}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                activeTab === 'pengeluaran' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-550 hover:text-stone-955'
+              }`}
+            >
+              <CheckCircle size={13} />
+              Hanya Bukti Pengeluaran
+            </button>
+            {attachmentFiles.length > 0 && (
+              <button
+                onClick={() => setActiveTab('lampiran')}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                  activeTab === 'lampiran' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-555 hover:text-stone-955'
+                }`}
+              >
+                <Cloud size={13} className="text-amber-600" />
+                Hanya Lampiran ({isLoadingPages ? '...' : renderedPages.length})
+              </button>
+            )}
+            {attachmentFiles.some(f => f.docType === 'invoice_vendor' || f.isBuktiPembayaran) && (
+              <button
+                onClick={() => setActiveTab('only_invoice_payment')}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                  activeTab === 'only_invoice_payment' ? 'bg-amber-100 text-[#917118] border border-amber-200 shadow-3xs font-black' : 'text-stone-550 hover:text-stone-955'
+                }`}
+                title="Cetak khusus halaman berkas Invoice Vendor dan Bukti Pembayaran saja"
+              >
+                <FileText size={13} className="text-amber-600" />
+                Invoice & Bukti Bayar Saja
+              </button>
+            )}
+          </div>
+
+          {/* Status Lampiran */}
           {attachmentFiles.length > 0 && (
-            <button
-              onClick={() => setActiveTab('lampiran')}
-              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
-                activeTab === 'lampiran' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-555 hover:text-stone-955'
-              }`}
-            >
-              <Cloud size={13} className="text-amber-600" />
-              Hanya Lampiran ({isLoadingPages ? '...' : renderedPages.length})
-            </button>
-          )}
-          {attachmentFiles.some(f => f.docType === 'invoice_vendor' || f.isBuktiPembayaran) && (
-            <button
-              onClick={() => setActiveTab('only_invoice_payment')}
-              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
-                activeTab === 'only_invoice_payment' ? 'bg-amber-100 text-[#917118] border border-amber-200 shadow-3xs font-black' : 'text-stone-550 hover:text-stone-955'
-              }`}
-              title="Cetak khusus halaman berkas Invoice Vendor dan Bukti Pembayaran saja"
-            >
-              <FileText size={13} className="text-amber-600" />
-              Invoice & Bukti Bayar Saja
-            </button>
-          )}
-        </div>
-
-        {attachmentFiles.length > 0 && (
-          <div className="flex flex-col gap-2 p-3 bg-stone-50 border border-stone-200 rounded-xl print:hidden w-full lg:max-w-[340px]">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Cloud size={14} className="text-amber-600" />
-                <span className="font-semibold text-stone-700 text-xs">Akses & Status Lampiran:</span>
+            <div className="flex flex-col gap-2 p-3 bg-stone-50 border border-stone-200 rounded-xl print:hidden w-full lg:max-w-[340px] text-left">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Cloud size={14} className="text-amber-600" />
+                  <span className="font-semibold text-stone-700 text-xs">Akses & Status Lampiran:</span>
+                </div>
+                <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-sm">
+                  {attachmentFiles.length} Berkas
+                </span>
               </div>
-              <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-sm">
-                {attachmentFiles.length} Berkas
-              </span>
-            </div>
-            <div className="text-[11px] max-h-[140px] overflow-y-auto space-y-1.5 scrollbar-thin">
-              {attachmentFiles.map((file, i) => {
-                const url = file.url || '';
-                const dMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-                const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-                const fileId = (dMatch && dMatch[1]) || (idMatch && idMatch[1]);
-                
-                const ownership = fileId ? fileOwnership[fileId] : 'unknown';
-                const copying = fileId ? isCopying[fileId] : false;
+              <div className="text-[11px] max-h-[140px] overflow-y-auto space-y-1.5 scrollbar-thin">
+                {attachmentFiles.map((file, i) => {
+                  const url = file.url || '';
+                  const dMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+                  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                  const fileId = (dMatch && dMatch[1]) || (idMatch && idMatch[1]);
+                  
+                  const ownership = fileId ? fileOwnership[fileId] : 'unknown';
+                  const copying = fileId ? isCopying[fileId] : false;
 
-                return (
-                  <div key={i} className="p-1.5 bg-white border border-stone-200 rounded-lg flex flex-col gap-1 shadow-3xs">
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="min-w-0 flex-1">
-                        <a 
-                          href={url} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="font-bold text-stone-850 hover:text-amber-700 hover:underline block truncate"
-                          title={file.name}
-                        >
-                          {i + 1}. {file.name}
-                        </a>
+                  return (
+                    <div key={i} className="p-1.5 bg-white border border-stone-200 rounded-lg flex flex-col gap-1 shadow-3xs">
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="min-w-0 flex-1">
+                          <a 
+                            href={url} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="font-bold text-stone-850 hover:text-amber-700 hover:underline block truncate"
+                            title={file.name}
+                          >
+                            {i + 1}. {file.name}
+                          </a>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between gap-2 border-t border-stone-100 pt-1 mt-0.5">
+                        <span className="text-[9px] font-mono leading-none flex items-center gap-1">
+                          {ownership === 'mine' ? (
+                            <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Tersimpan di Drive Anda
+                            </span>
+                          ) : ownership === 'others' ? (
+                            <span className="text-amber-600 font-semibold flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              Di Drive Akun Lain
+                            </span>
+                          ) : (
+                            <span className="text-stone-400">Memeriksa kepemilikan...</span>
+                          )}
+                        </span>
+
+                        {fileId && ownership === 'others' && (
+                          <button
+                            onClick={() => handleCopyFileToMyDrive(url, file.name)}
+                            disabled={copying}
+                            className="text-[9px] bg-amber-600 hover:bg-amber-700 disabled:bg-stone-200 text-white font-bold px-2 py-0.5 rounded transition flex items-center gap-0.5 shrink-0 cursor-pointer"
+                          >
+                            {copying ? (
+                              <>
+                                <Loader2 size={10} className="animate-spin" />
+                                <span>Menyalin...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Cloud size={10} />
+                                <span>Salin ke Drive Saya</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between gap-2 border-t border-stone-100 pt-1 mt-0.5">
-                      <span className="text-[9px] font-mono leading-none flex items-center gap-1">
-                        {ownership === 'mine' ? (
-                          <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Tersimpan di Drive Anda
-                          </span>
-                        ) : ownership === 'others' ? (
-                          <span className="text-amber-600 font-semibold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            Di Drive Akun Lain
-                          </span>
-                        ) : (
-                          <span className="text-stone-400">Memeriksa kepemilikan...</span>
-                        )}
-                      </span>
-
-                      {fileId && ownership === 'others' && (
-                        <button
-                          onClick={() => handleCopyFileToMyDrive(url, file.name)}
-                          disabled={copying}
-                          className="text-[9px] bg-amber-600 hover:bg-amber-700 disabled:bg-stone-200 text-white font-bold px-2 py-0.5 rounded transition flex items-center gap-0.5 shrink-0"
-                        >
-                          {copying ? (
-                            <>
-                              <Loader2 size={10} className="animate-spin" />
-                              <span>Menyalin...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Cloud size={10} />
-                              <span>Salin ke Drive Saya</span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Action Button */}
-        <div className="flex items-center gap-2 print:hidden">
-          <button
-            onClick={() => setIsShareModalOpen(true)}
-            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-3xs"
-          >
-            <Share2 size={16} />
-            Bagikan Transaksi
-          </button>
-          
-          <button
-            onClick={handlePrint}
-            id="btn-print-document"
-            className="flex items-center gap-2 bg-stone-900 hover:bg-stone-850 text-white font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-3xs"
-          >
-            <Printer size={16} />
-            Cetak PDF / A4
-          </button>
+          )}
         </div>
       </div>
 
