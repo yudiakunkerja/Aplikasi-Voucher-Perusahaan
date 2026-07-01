@@ -276,14 +276,15 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
       const kode = sub.kode;
       if (!kode) return;
 
-      // Try standard BKK-COMPANY/ROMAN/YY/1001 pattern
-      const stdMatch = kode.trim().match(/^(BKK-[A-Z0-9]+\/[I|V|X]+\/\d+)\/(\d+)$/i);
-      if (stdMatch) {
-        const prefix = stdMatch[1].toUpperCase();
-        const seq = parseInt(stdMatch[2], 10);
+      // 1. Strict standard BKK pattern: BKK-[COMPANY]/[ROMAN]/[YY]/[SEQ]
+      // Matches exactly four parts. Example: BKK-NMSA/VI/26/1003
+      const bkkMatch = kode.trim().match(/^(BKK-[A-Z0-9]+\/[IVX]+\/\d{2})\/(\d+)$/i);
+      if (bkkMatch) {
+        const prefix = bkkMatch[1].toUpperCase();
+        const seq = parseInt(bkkMatch[2], 10);
         if (!isNaN(seq)) {
           if (!prefixMap.has(prefix)) {
-            prefixMap.set(prefix, { rawPrefix: stdMatch[1], sequences: new Set(), submissions: [] });
+            prefixMap.set(prefix, { rawPrefix: bkkMatch[1], sequences: new Set(), submissions: [] });
           }
           prefixMap.get(prefix)!.sequences.add(seq);
           prefixMap.get(prefix)!.submissions.push(sub);
@@ -291,19 +292,24 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
         return;
       }
 
-      // Generic suffix match for any code ending in number, e.g. "HO-002"
-      const genMatch = kode.trim().match(/^(.*?)(?:[/\-\s]|\b)(\d+)$/);
-      if (genMatch) {
-        const prefix = (genMatch[1] || 'KODE_UMUM').toUpperCase();
-        const seq = parseInt(genMatch[2], 10);
+      // 2. Strict classic short sequential pattern: e.g. "HO-002" or "PETTY-105"
+      // Must be a clean alpha-numeric prefix (2 to 8 characters) separated by dash or slash to a trailing number
+      const classicMatch = kode.trim().match(/^([A-Z0-9]{2,8})[\-\/](\d+)$/i);
+      if (classicMatch) {
+        const prefix = classicMatch[1].toUpperCase();
+        const seq = parseInt(classicMatch[2], 10);
         if (!isNaN(seq)) {
           if (!prefixMap.has(prefix)) {
-            prefixMap.set(prefix, { rawPrefix: genMatch[1] || 'KODE_UMUM', sequences: new Set(), submissions: [] });
+            prefixMap.set(prefix, { rawPrefix: classicMatch[1], sequences: new Set(), submissions: [] });
           }
           prefixMap.get(prefix)!.sequences.add(seq);
           prefixMap.get(prefix)!.submissions.push(sub);
         }
+        return;
       }
+
+      // Other codes (e.g. random imported invoice numbers or document revision codes like 'FM.FIN.03.00.05 REV.01') 
+      // are ignored to avoid generating incorrect sequence gaps.
     });
 
     // 2. Identify gaps in sequence for each group
