@@ -938,6 +938,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
       let finalFiles: { url: string; name: string; isF1?: boolean; isF2?: boolean; isBuktiPembayaran?: boolean; docType?: string }[] = [];
       let finalBuktiPembayaran: { url: string; name: string } | undefined = undefined;
       let finalPettyCashFile: { url: string; name: string } | undefined = undefined;
+      let targetFolderId: string | undefined = undefined;
 
       const token = getStoredGoogleDriveToken();
       if (token) {
@@ -1005,7 +1006,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         const txFolderName = `${cleanJenis} - ${cleanPenerima}`;
 
         setSaveProgress(`6/6. Mencari/Membuat folder transaksi khusus: "${txFolderName}"...`);
-        const targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);
+        targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);
         console.log('[Drive Upload] Folder Transaksi Khusus ID:', targetFolderId);
 
         // Define reusable upload function to avoid duplicates
@@ -1129,6 +1130,41 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
           }))
         };
 
+        // Helper to delete old F1 & F2 files to avoid duplicates when regenerating
+        const deleteOldF1AndF2 = async (folderId: string) => {
+          try {
+            const res = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+                `('${folderId}' in parents and trashed = false) and (name starts with 'F1 -' or name starts with 'F2 -' or name = 'F1.pdf' or name = 'F2.pdf')`
+              )}&fields=files(id,name)`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              if (data.files && data.files.length > 0) {
+                console.log('[Drive Upload] Deleting old F1/F2 files to prevent duplicates:', data.files);
+                for (const file of data.files) {
+                  await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                    },
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Gagal menghapus F1/F2 lama:', err);
+          }
+        };
+
+        // Delete old F1 and F2
+        await deleteOldF1AndF2(targetFolderId);
+
         // 2. Generate and Upload F1
         setSaveProgress('Membuat Dokumen PDF Bukti Pengeluaran Kas/Bank (F1)...');
         const f1PdfBytes = await generateF1PdfBytes(tempSubmissionForPdf, calculatedGrandTotal);
@@ -1175,6 +1211,10 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         // Add system-generated files to usedNames to avoid conflicts
         usedNames.add(`F1 - (${cleanJenis} - ${cleanPenerima}).pdf`.toLowerCase());
         usedNames.add(`F2 - (${cleanJenis} - ${cleanPenerima}).pdf`.toLowerCase());
+
+        let bCounter = 1;
+        let invCounter = 1;
+        let pettyCashCounter = 1;
 
         for (let i = 0; i < fileItems.length; i++) {
           const item = fileItems[i];
@@ -1236,17 +1276,21 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
             }
           }
 
-          const cleanOriginalName = getCleanOriginalName(originalName);
-          const ext = mimeType === 'application/pdf' ? '.pdf' : (getFileExtensionForSave(cleanOriginalName) || '.bin');
-          const lastDot = cleanOriginalName.lastIndexOf('.');
-          const namePart = lastDot !== -1 ? cleanOriginalName.substring(0, lastDot) : cleanOriginalName;
+          const ext = mimeType === 'application/pdf' ? '.pdf' : (getFileExtensionForSave(originalName) || '.bin');
           
-          let finalFileName = `${namePart}${ext}`;
-          let nameCounter = 1;
-          while (usedNames.has(finalFileName.toLowerCase())) {
-            nameCounter++;
-            finalFileName = `${namePart} (${nameCounter})${ext}`;
+          let prefix = '';
+          if (item.docType === 'invoice_vendor') {
+            prefix = invCounter === 1 ? 'INV' : `INV${invCounter}`;
+            invCounter++;
+          } else if (item.docType === 'petty_cash_report') {
+            prefix = pettyCashCounter === 1 ? 'PettyCash' : `PettyCash${pettyCashCounter}`;
+            pettyCashCounter++;
+          } else {
+            prefix = `B${bCounter}`;
+            bCounter++;
           }
+
+          const finalFileName = `${prefix} - (${cleanJenis} - ${cleanPenerima})${ext}`;
           usedNames.add(finalFileName.toLowerCase());
 
           const resData = await uploadFileToFolder(finalFileName, mimeType, fileBytes, targetFolderId);
@@ -1278,10 +1322,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
             }
           }
           
-          const cleanPaymentName = getCleanOriginalName(buktiPembayaranFile.name);
-          const lastDotPayment = cleanPaymentName.lastIndexOf('.');
-          const namePartPayment = lastDotPayment !== -1 ? cleanPaymentName.substring(0, lastDotPayment) : cleanPaymentName;
-          let finalName = `${namePartPayment}${paymentExt}`;
+          const finalName = `BUKTI_BAYAR - (${cleanJenis} - ${cleanPenerima})${paymentExt}`;
           
           const uploadResult = await uploadFileToFolder(finalName, mime, bytes, folderBuktiBayarId);
           finalBuktiPembayaran = uploadResult;
@@ -1329,7 +1370,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
               }
             }
             
-            let pchyFinalName = `Laporan Petty Cash - ${pettyCashCustodian.trim()} (${tanggal})${pchyExt}`;
+            let pchyFinalName = `PettyCash - (${cleanJenis} - ${cleanPenerima})${pchyExt}`;
             
             const pchyUploadResult = await uploadFileToFolder(pchyFinalName, pchyMime, pchyBytes, pchyHierarchyId);
             finalPettyCashFile = pchyUploadResult;
@@ -1400,6 +1441,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         googleDriveFileUrl: finalFileUrl,
         googleDriveFileName: finalFileName,
         googleDriveFiles: finalFiles,
+        googleDriveFolderId: targetFolderId || (initialSubmission as any)?.googleDriveFolderId,
         buktiPembayaran: finalBuktiPembayaran,
         dibuatOleh,
         disetujuiOleh,

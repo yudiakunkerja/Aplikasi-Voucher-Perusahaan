@@ -60,6 +60,198 @@ const loadPdfJs = (): Promise<any> => {
   });
 };
 
+// Helper functions for real-time Google Drive synchronization
+const findFolderIdForSubmission = async (token: string, sub: any): Promise<string | null> => {
+  try {
+    // 1. Search 'Voucher-APP' folder under root
+    const resVoucherApp = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        "name = 'Voucher-APP' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false"
+      )}&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resVoucherApp.ok) return null;
+    const dataVoucherApp = await resVoucherApp.json();
+    if (!dataVoucherApp.files || dataVoucherApp.files.length === 0) return null;
+    const voucherAppId = dataVoucherApp.files[0].id;
+
+    // 2. Resolve Year/Month/Day folder parameters from submission.tanggal
+    const parts = (sub.tanggal || '').split('-');
+    let yearStr = '';
+    let monthStr = '';
+    let dayStr = '';
+
+    if (parts.length === 3) {
+      yearStr = parts[0];
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const INDONESIAN_MONTHS = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      const mNum = monthIdx + 1;
+      const mName = INDONESIAN_MONTHS[monthIdx] || 'Januari';
+      monthStr = `${mNum}. ${mName}`;
+      dayStr = String(parseInt(parts[2], 10));
+    } else {
+      const dateObj = new Date();
+      yearStr = String(dateObj.getFullYear());
+      const INDONESIAN_MONTHS = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      const mNum = dateObj.getMonth() + 1;
+      const mName = INDONESIAN_MONTHS[dateObj.getMonth()];
+      monthStr = `${mNum}. ${mName}`;
+      dayStr = String(dateObj.getDate());
+    }
+
+    const companyUpper = 'NMSA';
+
+    // 3. Search Company folder under 'Voucher-APP'
+    const resCompany = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `name = '${companyUpper}' and mimeType = 'application/vnd.google-apps.folder' and '${voucherAppId}' in parents and trashed = false`
+      )}&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resCompany.ok) return null;
+    const dataCompany = await resCompany.json();
+    if (!dataCompany.files || dataCompany.files.length === 0) return null;
+    const companyId = dataCompany.files[0].id;
+
+    // 4. Search Year folder under Company folder
+    const resYear = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `name = '${yearStr}' and mimeType = 'application/vnd.google-apps.folder' and '${companyId}' in parents and trashed = false`
+      )}&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resYear.ok) return null;
+    const dataYear = await resYear.json();
+    if (!dataYear.files || dataYear.files.length === 0) return null;
+    const yearId = dataYear.files[0].id;
+
+    // 5. Search Month folder under Year folder
+    const resMonth = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `name = '${monthStr}' and mimeType = 'application/vnd.google-apps.folder' and '${yearId}' in parents and trashed = false`
+      )}&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resMonth.ok) return null;
+    const dataMonth = await resMonth.json();
+    if (!dataMonth.files || dataMonth.files.length === 0) return null;
+    const monthId = dataMonth.files[0].id;
+
+    // 6. Search Day folder under Month folder
+    const resDay = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `name = '${dayStr}' and mimeType = 'application/vnd.google-apps.folder' and '${monthId}' in parents and trashed = false`
+      )}&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resDay.ok) return null;
+    const dataDay = await resDay.json();
+    if (!dataDay.files || dataDay.files.length === 0) return null;
+    const dayId = dataDay.files[0].id;
+
+    // 7. Search Custom Transaction folder under Day folder
+    const cleanJenis = (sub.jenisPengajuan || 'Pengajuan').trim().replace(/[\/\\?%*:|"<>.]/g, '');
+    const cleanPenerima = (sub.dibayarkanKepada || 'Penerima').trim().replace(/[\/\\?%*:|"<>.]/g, '');
+    const txFolderName = `${cleanJenis} - ${cleanPenerima}`;
+
+    const resTx = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `name = '${txFolderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${dayId}' in parents and trashed = false`
+      )}&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!resTx.ok) return null;
+    const dataTx = await resTx.json();
+    if (!dataTx.files || dataTx.files.length === 0) return null;
+    return dataTx.files[0].id;
+  } catch (err) {
+    console.error('Error finding Google Drive folder ID:', err);
+    return null;
+  }
+};
+
+const fetchAllFolderFilesRecursive = async (token: string, folderId: string): Promise<any[]> => {
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `'${folderId}' in parents and trashed = false`
+      )}&fields=files(id,name,webViewLink,mimeType)&pageSize=100`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const topFiles = data.files || [];
+    
+    let allFiles = [...topFiles];
+    
+    // Check if there is a "Bukti Pembayaran" folder
+    const bpFolder = topFiles.find(f => f.mimeType === 'application/vnd.google-apps.folder' && f.name === 'Bukti Pembayaran');
+    if (bpFolder) {
+      const bpRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+          `'${bpFolder.id}' in parents and trashed = false`
+        )}&fields=files(id,name,webViewLink,mimeType)&pageSize=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (bpRes.ok) {
+        const bpData = await bpRes.json();
+        const bpFiles = (bpData.files || []).map((f: any) => ({
+          ...f,
+          isBuktiPembayaran: true
+        }));
+        allFiles = [...allFiles, ...bpFiles];
+      }
+    }
+    
+    return allFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+  } catch (err) {
+    console.error('Error recursive listing files:', err);
+    return [];
+  }
+};
+
+const syncDriveFilesToAppFormat = (driveFiles: any[], cleanJenis: string, cleanPenerima: string) => {
+  return driveFiles.map(f => {
+    const name = f.name || '';
+    const url = f.webViewLink || `https://drive.google.com/file/d/${f.id}/view?usp=drivesdk`;
+    
+    let isF1 = false;
+    let isF2 = false;
+    let isBuktiPembayaran = !!f.isBuktiPembayaran;
+    let docType = '';
+
+    const nameUpper = name.toUpperCase();
+    if (nameUpper.startsWith('F1 -') || nameUpper.startsWith('F1-') || nameUpper === 'F1.PDF') {
+      isF1 = true;
+    } else if (nameUpper.startsWith('F2 -') || nameUpper.startsWith('F2-') || nameUpper === 'F2.PDF') {
+      isF2 = true;
+    } else if (nameUpper.startsWith('PETTYCASH -') || nameUpper.startsWith('PETTY_CASH -') || nameUpper.startsWith('PETTYCASH-') || nameUpper.includes('PETTYCASH')) {
+      docType = 'petty_cash_report';
+    } else if (nameUpper.startsWith('INV -') || nameUpper.startsWith('INV-') || nameUpper.startsWith('INVOICE -') || nameUpper.includes('INVOICE')) {
+      docType = 'invoice_vendor';
+    } else if (nameUpper.startsWith('BUKTI_BAYAR -') || nameUpper.startsWith('BUKTI_BAYAR-') || nameUpper.startsWith('BUKTI_TRANSFER -') || nameUpper.startsWith('BKK -') || nameUpper.startsWith('BKM -')) {
+      isBuktiPembayaran = true;
+    } else {
+      docType = 'attachment';
+    }
+
+    return {
+      url,
+      name,
+      isF1,
+      isF2,
+      isBuktiPembayaran,
+      docType
+    };
+  });
+};
+
 export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, userProfile, initialTab }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran' | 'only_invoice_payment'>(
     initialTab || 'both'
@@ -78,6 +270,43 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
+  // Real-time synced file state from Google Drive
+  const [syncedDriveFiles, setSyncedDriveFiles] = useState<any[]>(() => submission.googleDriveFiles || []);
+  const [isSyncingDriveFiles, setIsSyncingDriveFiles] = useState(false);
+
+  // Sync files from Google Drive in real-time
+  useEffect(() => {
+    const syncFiles = async () => {
+      const token = getStoredGoogleDriveToken();
+      if (!token) return;
+
+      setIsSyncingDriveFiles(true);
+      try {
+        let folderId = (submission as any).googleDriveFolderId;
+        if (!folderId) {
+          folderId = await findFolderIdForSubmission(token, submission);
+        }
+
+        if (folderId) {
+          const driveFiles = await fetchAllFolderFilesRecursive(token, folderId);
+          const cleanJenis = (submission.jenisPengajuan || 'Pengajuan').trim().replace(/[\/\\?%*:|"<>.]/g, '');
+          const cleanPenerima = (submission.dibayarkanKepada || 'Penerima').trim().replace(/[\/\\?%*:|"<>.]/g, '');
+          const formattedFiles = syncDriveFilesToAppFormat(driveFiles, cleanJenis, cleanPenerima);
+          
+          if (formattedFiles.length > 0) {
+            setSyncedDriveFiles(formattedFiles);
+          }
+        }
+      } catch (err) {
+        console.error('Error syncing files from Google Drive:', err);
+      } finally {
+        setIsSyncingDriveFiles(false);
+      }
+    };
+
+    syncFiles();
+  }, [submission, reloadTrigger]);
+
   const handleConnectDriveFromWarning = async () => {
     setIsConnectingDrive(true);
     try {
@@ -95,17 +324,19 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
   const grandTotal = submission.items.reduce((sum, item) => sum + item.total, 0);
 
-  const billFiles = (submission.googleDriveFiles || []).filter(
-    (f: any) => !f.isF1 && !f.isF2 && !f.isBuktiPembayaran
+  const displayFiles = syncedDriveFiles.length > 0 ? syncedDriveFiles : (submission.googleDriveFiles || []);
+
+  const billFiles = displayFiles.filter(
+    (f: any) => !f.isF1 && !f.isF2 && !f.isBuktiPembayaran && f.docType !== 'petty_cash_report'
   );
   
-  const legacyFiles = !submission.googleDriveFiles && submission.googleDriveFileUrl
+  const legacyFiles = !(submission.googleDriveFiles && submission.googleDriveFiles.length > 0) && submission.googleDriveFileUrl
     ? [{ url: submission.googleDriveFileUrl, name: submission.googleDriveFileName || 'Lampiran Bukti' }]
     : [];
     
   const activeBillFiles = billFiles.length > 0 ? billFiles : legacyFiles;
 
-  const paymentProofFile = submission.buktiPembayaran || (submission.googleDriveFiles || []).find((f: any) => f.isBuktiPembayaran);
+  const paymentProofFile = submission.buktiPembayaran || displayFiles.find((f: any) => f.isBuktiPembayaran);
   
   const attachmentFiles = [
     ...activeBillFiles,
