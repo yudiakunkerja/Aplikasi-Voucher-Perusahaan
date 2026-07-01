@@ -865,6 +865,21 @@ export const loadSubmissionsFromFirestore = async (companyId?: string): Promise<
   }
 };
 
+// Fetch single submission from Firestore by its ID
+export const getSubmissionFromFirestore = async (docId: string): Promise<Submission | null> => {
+  if (!isFirebaseConfigured() || !firestoreDb) return null;
+  try {
+    const docRef = doc(firestoreDb, 'submissions', docId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return mapFirestoreToSubmission(snap.id, snap.data());
+    }
+  } catch (err) {
+    console.warn('Error fetching single submission:', err);
+  }
+  return null;
+};
+
 // Put/Save single submission in Firestore under user's actual companyId
 export const saveSubmissionToFirestore = async (
   submission: Submission, 

@@ -20,9 +20,10 @@ import {
   loadSubmissionsFromFirestore,
   getCompanyProfileFromFirestore,
   logoutFromFirebase,
-  saveActivityLogToFirestore
+  saveActivityLogToFirestore,
+  getSubmissionFromFirestore
 } from './firebase';
-import { Database, FileText, CheckSquare, ShieldCheck, Heart, Cloud, Palette } from 'lucide-react';
+import { Database, FileText, CheckSquare, ShieldCheck, Heart, Cloud, Palette, Loader2, ArrowRight, LogIn } from 'lucide-react';
 
 export default function App() {
   const [theme, setTheme] = useState<'classic' | 'gold-dark' | 'emerald' | 'slate'>(() => {
@@ -59,6 +60,48 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [currentHash, setCurrentHash] = useState(window.location.hash);
+
+  const [sharedSubmission, setSharedSubmission] = useState<Submission | null>(null);
+  const [isLoadingShared, setIsLoadingShared] = useState(false);
+  const [sharedError, setSharedError] = useState('');
+
+  const getSharedIdFromHash = (hash: string) => {
+    if (hash.includes('shared-view')) {
+      const idMatch = hash.match(/[?&]id=([a-zA-Z0-9_-]+)/) || hash.match(/shared-view\/([a-zA-Z0-9_-]+)/);
+      if (idMatch && idMatch[1]) {
+        return idMatch[1];
+      }
+      const parts = hash.split('shared-view/');
+      if (parts[1]) {
+        return parts[1].split('?')[0];
+      }
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const sharedId = getSharedIdFromHash(currentHash);
+    if (sharedId) {
+      setIsLoadingShared(true);
+      setSharedError('');
+      getSubmissionFromFirestore(sharedId)
+        .then((sub) => {
+          if (sub) {
+            setSharedSubmission(sub);
+          } else {
+            setSharedError('Maaf, dokumen transaksi tidak ditemukan atau sudah dihapus dari server cloud.');
+          }
+        })
+        .catch((err) => {
+          setSharedError(`Gagal memuat dokumen transaksi: ${err.message || String(err)}`);
+        })
+        .finally(() => {
+          setIsLoadingShared(false);
+        });
+    } else {
+      setSharedSubmission(null);
+    }
+  }, [currentHash]);
 
   // Synchronous route popstate and hashchange tracking
   useEffect(() => {
@@ -418,6 +461,96 @@ export default function App() {
     updated.sort((a,b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
     saveSubmissionsToStorage(updated);
   };
+
+  // Check Public Share View Route before AuthGate
+  const isSharedViewRoute = currentHash.includes('shared-view');
+
+  if (isSharedViewRoute) {
+    return (
+      <div id="app-root" className={`min-h-screen bg-stone-50 text-stone-850 flex flex-col antialiased theme-${theme}`}>
+        {/* Public Header bar */}
+        <header className="bg-amber-600 border-b border-amber-700 sticky top-0 z-40 shadow-sm print:hidden">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/10 rounded-xl text-white">
+                <Database size={18} />
+              </div>
+              <div className="text-white">
+                <span className="font-mono text-[9px] uppercase tracking-widest text-amber-200 font-bold block leading-none mb-1">
+                  Portal Transaksi Publik
+                </span>
+                <h1 className="text-xs sm:text-sm font-black tracking-tight leading-none">
+                  PT Nusantara Mineral Sukses Abadi
+                </h1>
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigateTo('/')}
+              className="flex items-center gap-1.5 bg-white text-amber-700 font-bold px-3.5 py-1.5 rounded-xl text-xs hover:bg-stone-100 transition cursor-pointer shadow-3xs"
+            >
+              <LogIn size={13} />
+              Masuk Aplikasi
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col">
+          {isLoadingShared ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-20 space-y-4">
+              <Loader2 className="animate-spin text-amber-600" size={36} />
+              <p className="text-xs font-mono font-bold text-stone-500 uppercase tracking-widest">
+                Mengambil Dokumen Transaksi dari Cloud...
+              </p>
+            </div>
+          ) : sharedError ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto space-y-4">
+              <div className="p-4 bg-rose-100 text-rose-700 rounded-2xl">
+                <ShieldCheck size={32} className="text-rose-600" />
+              </div>
+              <h3 className="font-sans font-black text-stone-900 text-lg">Gagal Memuat Transaksi</h3>
+              <p className="text-xs text-stone-500 leading-relaxed font-mono">
+                {sharedError}
+              </p>
+              <button
+                onClick={() => navigateTo('/')}
+                className="bg-stone-900 hover:bg-stone-850 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition cursor-pointer"
+              >
+                Kembali ke Beranda
+              </button>
+            </div>
+          ) : sharedSubmission ? (
+            <div className="space-y-6">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900 leading-relaxed flex gap-2.5 print:hidden">
+                <ShieldCheck size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Akses Terbuka:</strong> Anda sedang melihat salinan digital resmi dari transaksi voucher <strong>{sharedSubmission.kode}</strong>. Seluruh lampiran dokumen di bawah ini telah di-upload ke Google Drive dan dapat diakses secara publik.
+                </p>
+              </div>
+
+              <PrintDocument
+                submission={sharedSubmission}
+                userProfile={{
+                  companyName: 'PT Nusantara Mineral Sukses Abadi',
+                  companyDetails: {
+                    name: 'PT Nusantara Mineral Sukses Abadi',
+                    fullName: 'PT. Nusantara Mineral Sukses Abadi',
+                    displayName: 'Invoice-NMSA'
+                  }
+                }}
+                initialTab="both"
+                onBack={() => navigateTo('/')}
+              />
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto space-y-4">
+              <p className="text-xs font-mono text-stone-400">Terjadi kesalahan yang tidak diketahui.</p>
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
 
   // Check Authentication First: enforce AuthGate for ALL pages when unauthenticated
   if (!authUser) {

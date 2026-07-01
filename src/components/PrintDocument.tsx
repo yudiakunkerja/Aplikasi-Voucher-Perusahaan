@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Submission } from '../types';
 import { formatRupiah, formatDateIndonesian, numberToTerbilang } from '../utils';
 import { NusantaraLogo } from './NusantaraLogo';
-import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send } from 'lucide-react';
 import { getStoredGoogleDriveToken, googleDriveLogin, saveSubmissionToFirestore } from '../firebase';
 
 interface PrintDocumentProps {
@@ -75,6 +75,8 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
   const [isConnectedToDrive, setIsConnectedToDrive] = useState(!!getStoredGoogleDriveToken());
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
   const handleConnectDriveFromWarning = async () => {
     setIsConnectingDrive(true);
@@ -410,58 +412,78 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
           try {
             const isPdf = /\.pdf/i.test(file.name || '') || file.url.includes('.pdf');
 
-            // Download file content via public export or auth media
+            // Download file content via authenticated direct API, server-side CORS proxy, or public fallback download
             let fileBlob: Blob | null = null;
             try {
-              const headers: HeadersInit = {};
               if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-              }
-              const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers });
-              if (!fileRes.ok) {
-                throw new Error(`HTTP ${fileRes.status}`);
-              }
-              fileBlob = await fileRes.blob();
-            } catch (fetchErr: any) {
-              console.warn('Gagal mengunduh menggunakan token, mencoba unduhan publik langsung:', fetchErr);
-              if (!isPdf) {
-                // Non-PDF files (images) do not need CORS-compliant binary blobs!
-                // We can render them directly using the Google Drive direct uc export view URL inside img tags
-                const dataUrl = `https://docs.google.com/uc?export=view&id=${fileId}`;
-                let isLandscape = false;
                 try {
-                  const img = new Image();
-                  img.src = dataUrl;
-                  await new Promise((resolve) => {
-                    img.onload = () => {
-                      isLandscape = img.width > img.height;
-                      resolve(null);
-                    };
-                    img.onerror = () => resolve(null);
-                  });
-                } catch (e) {
-                  console.warn('Failed to parse fallback image orientation, defaulting to portrait', e);
+                  const headers: HeadersInit = {
+                    'Authorization': `Bearer ${token}`
+                  };
+                  const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers });
+                  if (fileRes.ok) {
+                    fileBlob = await fileRes.blob();
+                  } else {
+                    console.warn(`Gagal mengambil media via token direct (status ${fileRes.status}), mencoba proxy...`);
+                  }
+                } catch (tokenErr) {
+                  console.warn('Gagal unduh via token direct, dialihkan ke proxy:', tokenErr);
                 }
-
-                tempPages.push({
-                  id: `${fileId}-fallback-img`,
-                  fileName: file.name,
-                  fileIndex: i,
-                  pageNumber: 1,
-                  dataUrl,
-                  isLandscape
-                });
-                continue;
               }
-              // Fallback to docs.google.com direct download helper
-              try {
-                const publicRes = await fetch(`https://docs.google.com/uc?export=download&id=${fileId}`);
-                if (!publicRes.ok) {
-                  throw new Error('Gagal mengunduh file dari Google Drive. Pastikan berkas dapat diakses publik atau hubungkan ulang akun Google Drive.');
+
+              // If token failed, absent, or we don't have one, use the server-side CORS proxy
+              if (!fileBlob) {
+                const proxyRes = await fetch(`/api/drive-proxy?id=${fileId}`);
+                if (proxyRes.ok) {
+                  fileBlob = await proxyRes.blob();
+                } else {
+                  console.warn(`Proxy server mengembalikan status ${proxyRes.status}, mencoba fallback langsung...`);
                 }
-                fileBlob = await publicRes.blob();
-              } catch (pdfFallbackErr) {
-                throw new Error(`Gagal mengunduh dokumen PDF dari Google Drive. Sesi koneksi Anda kemungkinan telah kedaluwarsa atau berkas tidak diatur publik.`);
+              }
+            } catch (err) {
+              console.warn('Gagal unduh lewat token/proxy, mencoba fallback langsung:', err);
+            }
+
+            if (!fileBlob) {
+              try {
+                if (!isPdf) {
+                  // Non-PDF files (images) fallback direct export
+                  const dataUrl = `https://docs.google.com/uc?export=view&id=${fileId}`;
+                  let isLandscape = false;
+                  try {
+                    const img = new Image();
+                    img.src = dataUrl;
+                    await new Promise((resolve) => {
+                      img.onload = () => {
+                        isLandscape = img.width > img.height;
+                        resolve(null);
+                      };
+                      img.onerror = () => resolve(null);
+                    });
+                  } catch (e) {
+                    console.warn('Failed to parse fallback image orientation, defaulting to portrait', e);
+                  }
+
+                  tempPages.push({
+                    id: `${fileId}-fallback-img`,
+                    fileName: file.name,
+                    fileIndex: i,
+                    pageNumber: 1,
+                    dataUrl,
+                    isLandscape
+                  });
+                  continue;
+                } else {
+                  // Fallback direct download
+                  const publicRes = await fetch(`https://docs.google.com/uc?export=download&id=${fileId}`);
+                  if (publicRes.ok) {
+                    fileBlob = await publicRes.blob();
+                  } else {
+                    throw new Error(`HTTP ${publicRes.status}`);
+                  }
+                }
+              } catch (fallbackErr) {
+                throw new Error(`Gagal mengunduh dokumen dari Google Drive. Pastikan berkas diatur "Akses Publik" (Anyone with link can view).`);
               }
             }
 
@@ -741,15 +763,154 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         )}
 
         {/* Action Button */}
-        <button
-          onClick={handlePrint}
-          id="btn-print-document"
-          className="flex items-center gap-2 bg-stone-900 hover:bg-stone-850 text-white font-bold px-5 py-2 rounded-xl transition"
-        >
-          <Printer size={16} />
-          Cetak PDF / A4
-        </button>
+        <div className="flex items-center gap-2 print:hidden">
+          <button
+            onClick={() => setIsShareModalOpen(true)}
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-3xs"
+          >
+            <Share2 size={16} />
+            Bagikan Transaksi
+          </button>
+          
+          <button
+            onClick={handlePrint}
+            id="btn-print-document"
+            className="flex items-center gap-2 bg-stone-900 hover:bg-stone-850 text-white font-bold px-5 py-2 rounded-xl transition cursor-pointer shadow-3xs"
+          >
+            <Printer size={16} />
+            Cetak PDF / A4
+          </button>
+        </div>
       </div>
+
+      {/* Share Modal Dialog Box */}
+      {isShareModalOpen && (() => {
+        const shareUrl = `${window.location.origin}${window.location.pathname}#/shared-view?id=${submission.id}`;
+        const waText = `Halo, berikut adalah bukti dokumen pengeluaran kas/bank yang sudah tersinkronisasi sebagai 1 kesatuan:\n\n` +
+          `*Nomor Voucher:* ${submission.kode}\n` +
+          `*Dibayarkan Kepada:* ${submission.dibayarkanKepada}\n` +
+          `*Tanggal:* ${formatDateIndonesian(submission.tanggal)}\n` +
+          `*Kategori:* ${submission.jenisPengajuan || '-'}\n` +
+          `*Total Nominal:* Rp ${grandTotal.toLocaleString('id-ID')}\n\n` +
+          `Silakan klik tautan di bawah ini untuk melihat detail lengkap transaksi beserta seluruh lampiran asli yang sudah di-upload:\n` +
+          `${shareUrl}`;
+        const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(waText)}`;
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] print:hidden">
+            <div className="bg-white rounded-2xl max-w-lg w-full border border-stone-200 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left">
+              {/* Header */}
+              <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-amber-100 rounded-xl text-amber-700">
+                    <Share2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-sans font-black text-stone-900 text-sm">Bagikan Dokumen Transaksi</h3>
+                    <p className="text-[11px] text-stone-500 font-mono">Kode Voucher: {submission.kode}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsShareModalOpen(false)}
+                  className="text-stone-400 hover:text-stone-700 p-1.5 rounded-lg hover:bg-stone-100 transition font-mono font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-5 font-sans">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 leading-relaxed flex gap-2.5">
+                  <CheckCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <p>
+                    Sistem secara otomatis mengunggah dokumen dengan izin <strong>"Akses Publik" (Anyone with link can view)</strong> di Google Drive Anda. Siapapun yang memiliki tautan di bawah ini dapat mengakses visualisasi voucher, rincian pengeluaran, dan lampiran aslinya sekaligus sebagai 1 kesatuan!
+                  </p>
+                </div>
+
+                {/* Shareable Link Input */}
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-mono font-bold text-stone-500 uppercase tracking-wider">
+                    Link Publik Transaksi (Satu Kesatuan):
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareUrl}
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                      className="flex-1 bg-stone-50 border border-stone-250 rounded-xl px-3.5 py-2.5 text-xs font-mono text-stone-800 select-all focus:outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(shareUrl);
+                        setIsCopied(true);
+                        setTimeout(() => setIsCopied(false), 2000);
+                      }}
+                      className={`px-4 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                        isCopied 
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
+                          : 'bg-stone-900 hover:bg-stone-850 text-white'
+                      }`}
+                    >
+                      {isCopied ? <Check size={14} /> : <Copy size={14} />}
+                      {isCopied ? 'Tersalin' : 'Salin Link'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Individual Attachment Links */}
+                {attachmentFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-mono font-bold text-stone-500 uppercase tracking-wider">
+                      Daftar Link Berkas Google Drive Langsung:
+                    </label>
+                    <div className="max-h-[120px] overflow-y-auto border border-stone-200 rounded-xl p-2 bg-stone-50/50 space-y-2 divide-y divide-stone-100">
+                      {attachmentFiles.map((f, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs pt-1.5 first:pt-0">
+                          <span className="font-mono text-[11px] text-stone-600 truncate max-w-[280px]">
+                            {idx + 1}. {f.name}
+                          </span>
+                          <a
+                            href={f.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-amber-700 hover:underline hover:text-amber-900 font-bold text-[11px]"
+                          >
+                            Buka Berkas asli ↗
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* WhatsApp Button */}
+                <div className="pt-2">
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold py-3 px-4 rounded-xl transition text-sm cursor-pointer shadow-sm text-center"
+                  >
+                    <Send size={16} />
+                    Kirim via WhatsApp
+                  </a>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-stone-50 border-t border-stone-100 flex justify-end">
+                <button
+                  onClick={() => setIsShareModalOpen(false)}
+                  className="bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* DOCUMENT PAGE HOLDER */}
       <div className="flex flex-col items-center space-y-8 print:space-y-0 print:bg-white">

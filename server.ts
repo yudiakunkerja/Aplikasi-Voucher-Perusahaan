@@ -134,6 +134,42 @@ PENTING: Seluruh nominal uang harus diekstrak sebagai angka (number) tanpa titik
   }
 });
 
+// Google Drive File Downloader Proxy to bypass browser CORS for public files
+app.get("/api/drive-proxy", async (req, res) => {
+  const fileId = req.query.id as string;
+  if (!fileId) {
+    return res.status(400).json({ error: "Missing 'id' query parameter." });
+  }
+
+  try {
+    const driveUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+    
+    const response = await fetch(driveUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Google Drive returned HTTP status ${response.status}`);
+    }
+
+    const contentType = response.headers.get("content-type") || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400"); // Cache file for 24 hours to speed up subsequent loads
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return res.send(buffer);
+  } catch (error: any) {
+    console.error(`Error in /api/drive-proxy for file ID ${fileId}:`, error);
+    return res.status(500).json({ 
+      error: "Gagal mengunduh berkas dari Google Drive via proxy server.", 
+      details: error.message 
+    });
+  }
+});
+
 // Setup Vite Development Server or Serve static production bundle
 async function bootstrap() {
   if (process.env.NODE_ENV !== "production") {
