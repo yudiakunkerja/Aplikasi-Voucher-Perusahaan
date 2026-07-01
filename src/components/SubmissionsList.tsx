@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Submission, ActivityLog } from '../types';
 import { formatRupiah, formatDateIndonesian } from '../utils';
 import { Search, Eye, Edit2, Trash2, Calendar, MapPin, DollarSign, Plus, Copy, RefreshCw, Cloud, FileText, Database, History, FileSpreadsheet, CheckCircle, AlertCircle, Printer, Check, ExternalLink, Coins, User } from 'lucide-react';
-import { loadActivityLogsFromFirestore } from '../firebase';
+import { loadActivityLogsFromFirestore, isFirebaseConfigured } from '../firebase';
 
 interface SubmissionsListProps {
   submissions: Submission[];
@@ -72,6 +72,7 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logsSearchTerm, setLogsSearchTerm] = useState('');
+  const [logsTab, setLogsTab] = useState<'all' | 'deletions' | 'missing_analysis'>('all');
 
   // Fetch activity logs when audit logs tab is open
   const reloadLogs = () => {
@@ -244,6 +245,132 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
       return text.includes(logsSearchTerm.toLowerCase());
     });
   }, [logs, logsSearchTerm]);
+
+  // Extract specifically deleted vouchers logs
+  const deletionLogs = useMemo(() => {
+    if (!logs) return [];
+    return logs.filter(log => log.action === 'delete_submission');
+  }, [logs]);
+
+  // Analyze missing sequential voucher codes
+  const missingVouchersAnalysis = useMemo(() => {
+    const results: {
+      prefix: string;
+      range: string;
+      missing: {
+        sequence: number;
+        fullKode: string;
+        deletedLog?: ActivityLog;
+      }[];
+      activeCount: number;
+    }[] = [];
+
+    // 1. Group active submissions by prefix
+    const prefixMap = new Map<string, {
+      rawPrefix: string;
+      sequences: Set<number>;
+      submissions: Submission[];
+    }>();
+
+    submissions.forEach(sub => {
+      const kode = sub.kode;
+      if (!kode) return;
+
+      // Try standard BKK-COMPANY/ROMAN/YY/1001 pattern
+      const stdMatch = kode.trim().match(/^(BKK-[A-Z0-9]+\/[I|V|X]+\/\d+)\/(\d+)$/i);
+      if (stdMatch) {
+        const prefix = stdMatch[1].toUpperCase();
+        const seq = parseInt(stdMatch[2], 10);
+        if (!isNaN(seq)) {
+          if (!prefixMap.has(prefix)) {
+            prefixMap.set(prefix, { rawPrefix: stdMatch[1], sequences: new Set(), submissions: [] });
+          }
+          prefixMap.get(prefix)!.sequences.add(seq);
+          prefixMap.get(prefix)!.submissions.push(sub);
+        }
+        return;
+      }
+
+      // Generic suffix match for any code ending in number, e.g. "HO-002"
+      const genMatch = kode.trim().match(/^(.*?)(?:[/\-\s]|\b)(\d+)$/);
+      if (genMatch) {
+        const prefix = (genMatch[1] || 'KODE_UMUM').toUpperCase();
+        const seq = parseInt(genMatch[2], 10);
+        if (!isNaN(seq)) {
+          if (!prefixMap.has(prefix)) {
+            prefixMap.set(prefix, { rawPrefix: genMatch[1] || 'KODE_UMUM', sequences: new Set(), submissions: [] });
+          }
+          prefixMap.get(prefix)!.sequences.add(seq);
+          prefixMap.get(prefix)!.submissions.push(sub);
+        }
+      }
+    });
+
+    // 2. Identify gaps in sequence for each group
+    prefixMap.forEach((data, prefix) => {
+      const seqArr = Array.from(data.sequences).sort((a, b) => a - b);
+      if (seqArr.length === 0) return;
+
+      const minSeq = seqArr[0];
+      const maxSeq = seqArr[seqArr.length - 1];
+
+      // Auto BKK format starts at 1001. Other custom patterns start at minSeq, or 1 if minSeq is low (<= 5).
+      const expectedStart = prefix.startsWith('BKK-') ? 1001 : (minSeq <= 5 ? 1 : minSeq);
+
+      const missing: {
+        sequence: number;
+        fullKode: string;
+        deletedLog?: ActivityLog;
+      }[] = [];
+
+      for (let s = expectedStart; s <= maxSeq; s++) {
+        if (!data.sequences.has(s)) {
+          // Reconstruct the voucher code
+          let fullKode = '';
+          if (prefix.startsWith('BKK-')) {
+            fullKode = `${data.rawPrefix}/${s}`;
+          } else {
+            // Reconstruct based on original separator if possible, else default to suffix
+            const sample = data.submissions[0]?.kode || '';
+            const separator = sample.includes('/') ? '/' : sample.includes('-') ? '-' : '';
+            // Match original length padding if applicable (e.g., HO-001 vs HO-1)
+            const digitsMatch = sample.match(/(\d+)$/);
+            if (digitsMatch) {
+              const origLen = digitsMatch[1].length;
+              const paddedSeq = String(s).padStart(origLen, '0');
+              fullKode = `${data.rawPrefix}${separator}${paddedSeq}`;
+            } else {
+              fullKode = `${data.rawPrefix}${separator}${s}`;
+            }
+          }
+
+          // Cross-reference with deletion logs
+          const deletionLog = logs.find(log => 
+            log.action === 'delete_submission' && 
+            (log.submissionCode === fullKode || log.details.includes(fullKode))
+          );
+
+          missing.push({
+            sequence: s,
+            fullKode,
+            deletedLog: deletionLog
+          });
+        }
+      }
+
+      if (missing.length > 0 || seqArr.length > 0) {
+        results.push({
+          prefix,
+          range: `${expectedStart} - ${maxSeq}`,
+          missing,
+          activeCount: data.sequences.size
+        });
+      }
+    });
+
+    // Sort by prefix alphabetically
+    return results.sort((a, b) => a.prefix.localeCompare(b.prefix));
+  }, [submissions, logs]);
 
   // Grouped amounts for quick charts/budget
   const methodStats = useMemo(() => {
@@ -2685,7 +2812,7 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
         /* Log Riwayat Audit Detail View */
         <div className="bg-white rounded-2xl border border-stone-250 shadow-sm overflow-hidden animate-fade-in">
           {/* Header Activity Log panel */}
-          <div className="px-6 py-5 bg-stone-50 border-b border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="px-6 py-5 bg-stone-50 border-b border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4 text-left">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold text-stone-900">Riwayat Audit & Aktivitas Aplikasi</span>
@@ -2693,27 +2820,29 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
                   {filteredLogs.length} Entri Terdaftar
                 </span>
               </div>
-              <p className="text-xs text-stone-500">Log sinkronisasi transaksi, persetujuan admin, and pengunggahan bukti pembayaran Google Drive secara real-time.</p>
+              <p className="text-xs text-stone-500 font-sans">Log sinkronisasi transaksi, persetujuan admin, dan pengunggahan bukti pembayaran Google Drive secara real-time.</p>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stone sm:items-center gap-2">
-              {/* Search Log */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
-                <input
-                  type="text"
-                  placeholder="Cari kata kunci log..."
-                  className="pl-8 pr-4 py-1.5 w-full sm:w-56 bg-white border border-stone-250 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#917118] focus:border-transparent text-stone-700 font-mono"
-                  value={logsSearchTerm}
-                  onChange={(e) => setLogsSearchTerm(e.target.value)}
-                />
-              </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Search Log (only visible on "all" logs tab) */}
+              {logsTab === 'all' && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                  <input
+                    type="text"
+                    placeholder="Cari kata kunci log..."
+                    className="pl-8 pr-4 py-1.5 w-full sm:w-56 bg-white border border-stone-250 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#917118] focus:border-transparent text-stone-700 font-mono"
+                    value={logsSearchTerm}
+                    onChange={(e) => setLogsSearchTerm(e.target.value)}
+                  />
+                </div>
+              )}
 
               {/* Refresh Button */}
               <button
                 onClick={reloadLogs}
                 disabled={isLoadingLogs}
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-stone-250 hover:bg-stone-50 text-stone-700 bg-white font-extrabold rounded-xl text-xs transition duration-150 shadow-3xs cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-stone-250 hover:bg-stone-50 text-stone-700 bg-white font-extrabold rounded-xl text-xs transition duration-150 shadow-3xs cursor-pointer shrink-0"
               >
                 <RefreshCw size={12} className={isLoadingLogs ? 'animate-spin' : ''} />
                 <span>Segarkan</span>
@@ -2721,109 +2850,338 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
             </div>
           </div>
 
-          {/* Table Container */}
-          <div className="overflow-x-auto">
-            {isLoadingLogs ? (
-              <div className="py-20 text-center text-stone-400 flex flex-col items-center justify-center gap-3">
-                <RefreshCw size={32} className="animate-spin text-[#917118]" />
-                <span className="text-xs font-bold text-stone-500">Memuat log riwayat aktivitas terbaru...</span>
+          {/* Sub Tab Navigation */}
+          <div className="px-6 py-3 bg-stone-50/50 border-b border-stone-150 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+            <div className="flex bg-stone-100 p-1 rounded-xl border border-stone-200 flex-wrap gap-1">
+              <button
+                onClick={() => setLogsTab('all')}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all duration-150 cursor-pointer ${
+                  logsTab === 'all'
+                    ? 'bg-white text-stone-900 shadow-3xs font-extrabold'
+                    : 'text-stone-550 hover:text-stone-900'
+                }`}
+              >
+                <Database size={13} />
+                <span>Semua Log Aktivitas</span>
+              </button>
+
+              <button
+                onClick={() => setLogsTab('deletions')}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all duration-150 cursor-pointer ${
+                  logsTab === 'deletions'
+                    ? 'bg-rose-50 border border-rose-200/50 text-rose-800 shadow-3xs font-extrabold'
+                    : 'text-stone-550 hover:text-stone-900'
+                }`}
+              >
+                <Trash2 size={13} className={logsTab === 'deletions' ? 'text-rose-600' : ''} />
+                <span>Riwayat Penghapusan ({deletionLogs.length})</span>
+              </button>
+
+              <button
+                onClick={() => setLogsTab('missing_analysis')}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all duration-150 cursor-pointer ${
+                  logsTab === 'missing_analysis'
+                    ? 'bg-amber-50 border border-amber-200/50 text-[#8a6810] shadow-3xs font-extrabold'
+                    : 'text-stone-550 hover:text-stone-900'
+                }`}
+              >
+                <AlertCircle size={13} className={logsTab === 'missing_analysis' ? 'text-amber-600' : ''} />
+                <span>Analisis Nomor Hilang ({missingVouchersAnalysis.reduce((acc, curr) => acc + curr.missing.length, 0)})</span>
+              </button>
+            </div>
+
+            <div className="text-[10px] text-stone-400 font-mono">
+              Status Sinkron: {isFirebaseConfigured() ? '☁️ Firebase Aktif' : '💾 Penyimpanan Lokal'}
+            </div>
+          </div>
+
+          {/* Tab 1: ALL LOGS */}
+          {logsTab === 'all' && (
+            <div className="overflow-x-auto">
+              {isLoadingLogs ? (
+                <div className="py-20 text-center text-stone-400 flex flex-col items-center justify-center gap-3">
+                  <RefreshCw size={32} className="animate-spin text-[#917118]" />
+                  <span className="text-xs font-bold text-stone-500">Memuat log riwayat aktivitas terbaru...</span>
+                </div>
+              ) : filteredLogs.length > 0 ? (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-stone-50/60 border-b border-stone-200 text-stone-500 font-mono text-[10px] uppercase tracking-wider">
+                      <th className="py-3.5 px-6">Waktu Kejadian (WIB)</th>
+                      <th className="py-3.5 px-6">Pelaku Aktivitas</th>
+                      <th className="py-3.5 px-6">Nama Modul</th>
+                      <th className="py-3.5 px-6">Detail Log Aktivitas</th>
+                      <th className="py-3.5 px-6 text-center">Aksi Cepat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 text-stone-800 text-xs font-mono">
+                    {filteredLogs.map((log) => {
+                      const affiliateSub = submissions.find(s => s.id === log.submissionId || (s.kode && log.submissionCode && s.kode === log.submissionCode));
+                      const logDate = new Date(log.timestamp);
+                      const isToday = new Date().toDateString() === logDate.toDateString();
+                      
+                      let timeStr = logDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      let fullDateStr = isToday 
+                        ? `Hari ini, ${timeStr}`
+                        : `${formatDateIndonesian(log.timestamp.split('T')[0])} ${timeStr}`;
+
+                      let catStyle = "bg-stone-100 text-stone-700 border-stone-200";
+                      if (log.category === 'success') {
+                        catStyle = "bg-emerald-50 text-emerald-800 border-emerald-150";
+                      } else if (log.category === 'warning') {
+                        catStyle = "bg-rose-50 text-rose-800 border-rose-150";
+                      } else if (log.category === 'info') {
+                        catStyle = "bg-sky-50 text-sky-800 border-sky-150";
+                      }
+
+                      return (
+                        <tr key={log.id} className="hover:bg-stone-50/40 transition">
+                          <td className="py-3.5 px-6 whitespace-nowrap">
+                            <span className="text-[11px] text-stone-500 font-mono">{fullDateStr}</span>
+                          </td>
+
+                          <td className="py-3.5 px-6">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center font-bold text-[10px] uppercase select-none font-sans shrink-0">
+                                {log.userName ? log.userName.charAt(0) : 'S'}
+                              </div>
+                              <div className="font-sans text-left">
+                                <div className="font-bold text-stone-800 text-xs">{log.userName || 'Sistem'}</div>
+                                <div className="text-[10px] text-stone-400 font-mono leading-none">{log.userEmail || 'system_ledger'}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-6 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 border text-[10px] font-mono font-black rounded-lg ${catStyle}`}>
+                              {log.action.toUpperCase()}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-6 text-left">
+                            <p className="max-w-md break-all sm:break-normal text-stone-700 leading-normal font-sans text-xs">{log.details}</p>
+                          </td>
+
+                          <td className="py-3.5 px-6 whitespace-nowrap text-center font-sans">
+                            {affiliateSub ? (
+                              <button
+                                onClick={() => {
+                                  onSelect(affiliateSub);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-stone-900 border border-stone-800 text-white hover:bg-stone-800 font-extrabold rounded-lg transition duration-150 text-[10px] cursor-pointer shadow-3xs"
+                                title="Buka / Cetak voucher transaksi yang sah"
+                              >
+                                <Eye size={11} className="text-[#D4AF37]" />
+                                <span>Lihat Voucher</span>
+                              </button>
+                            ) : log.submissionCode ? (
+                              <span className="text-[10px] text-stone-400 font-mono">ID: {log.submissionCode}</span>
+                            ) : (
+                              <span className="text-[10px] text-stone-300">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="py-20 text-center text-stone-400 text-xs">
+                  Belum terdaftar riwayat ataupun asersi kejadian dalam sistem log riwayat aktivitas.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 2: DELETED VOUCHERS */}
+          {logsTab === 'deletions' && (
+            <div className="overflow-x-auto text-left">
+              {isLoadingLogs ? (
+                <div className="py-20 text-center text-stone-400 flex flex-col items-center justify-center gap-3">
+                  <RefreshCw size={32} className="animate-spin text-rose-500" />
+                  <span className="text-xs font-bold text-stone-500">Memuat riwayat penghapusan...</span>
+                </div>
+              ) : deletionLogs.length > 0 ? (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-rose-50/40 border-b border-rose-100 text-stone-500 font-mono text-[10px] uppercase tracking-wider">
+                      <th className="py-3.5 px-6">Waktu Penghapusan</th>
+                      <th className="py-3.5 px-6">Dihapus Oleh</th>
+                      <th className="py-3.5 px-6">Nomor Voucher</th>
+                      <th className="py-3.5 px-6">Rincian Transaksi Yang Dihapus</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 text-stone-850 text-xs font-mono">
+                    {deletionLogs.map((log) => {
+                      const logDate = new Date(log.timestamp);
+                      const isToday = new Date().toDateString() === logDate.toDateString();
+                      
+                      let timeStr = logDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      let fullDateStr = isToday 
+                        ? `Hari ini, ${timeStr}`
+                        : `${formatDateIndonesian(log.timestamp.split('T')[0])} ${timeStr}`;
+
+                      return (
+                        <tr key={log.id} className="hover:bg-rose-50/10 transition">
+                          <td className="py-3.5 px-6 whitespace-nowrap">
+                            <span className="text-[11px] text-rose-750 font-semibold font-mono">{fullDateStr}</span>
+                          </td>
+
+                          <td className="py-3.5 px-6">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-[10px] uppercase select-none font-sans shrink-0">
+                                {log.userName ? log.userName.charAt(0) : 'U'}
+                              </div>
+                              <div className="font-sans text-left">
+                                <div className="font-bold text-stone-850 text-xs">{log.userName || 'Sistem'}</div>
+                                <div className="text-[10px] text-stone-400 font-mono leading-none">{log.userEmail || 'offline_user'}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-6 whitespace-nowrap">
+                            <span className="px-2.5 py-1 bg-rose-50 border border-rose-100 text-rose-700 font-black rounded-lg text-[11px]">
+                              {log.submissionCode || 'TIDAK TERDEFINISI'}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-6 font-sans text-xs text-stone-700 text-left">
+                            <p className="max-w-2xl whitespace-pre-line leading-relaxed">{log.details}</p>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="py-20 text-center text-stone-400 text-xs flex flex-col items-center justify-center gap-2">
+                  <Trash2 size={24} className="text-stone-300" />
+                  <span>Belum ada transaksi yang tercatat dihapus dari sistem.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: MISSING SEQUENTIAL NUMBERS */}
+          {logsTab === 'missing_analysis' && (
+            <div className="p-6 text-left space-y-6">
+              <div className="bg-amber-50/60 border border-amber-200/60 p-4 rounded-xl text-stone-800 text-xs leading-relaxed space-y-2 font-sans">
+                <div className="flex items-center gap-2 font-black text-amber-900">
+                  <AlertCircle size={15} className="text-amber-600 shrink-0" />
+                  <span>Bagaimana Deteksi Nomor Voucher Hilang Bekerja?</span>
+                </div>
+                <p className="text-stone-600 leading-relaxed">
+                  Sistem menganalisis urutan nomor seri voucher transaksi (contoh format otomatis: <code className="bg-white/80 px-1 border border-stone-200 rounded font-mono text-[10.5px]">BKK-NMSA/VI/26/1001, 1002, 1003...</code>) berdasarkan masing-masing kelompok perusahaan/bulan/tahun. Jika ada nomor seri yang terlewat atau bolong dalam daftar aktif, sistem mendeteksinya sebagai <strong>Nomor Hilang (Gaps)</strong> dan mengorelasikannya dengan log penghapusan untuk mengonfirmasi apakah voucher tersebut dihapus secara resmi oleh admin, atau sekadar diloncati saat pembuatan transaksi manual.
+                </p>
               </div>
-            ) : filteredLogs.length > 0 ? (
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-stone-50/60 border-b border-stone-200 text-stone-500 font-mono text-[10px] uppercase tracking-wider">
-                    <th className="py-3.5 px-6">Waktu Kejadian (WIB)</th>
-                    <th className="py-3.5 px-6">Pelaku Aktivitas</th>
-                    <th className="py-3.5 px-6">Nama Modul</th>
-                    <th className="py-3.5 px-6">Detail Log Aktivitas</th>
-                    <th className="py-3.5 px-6 text-center">Aksi Cepat</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 text-stone-800 text-xs font-mono">
-                  {filteredLogs.map((log) => {
-                    // Look up submission object to allow clicking "View" directly
-                    const affiliateSub = submissions.find(s => s.id === log.submissionId || (s.kode && log.submissionCode && s.kode === log.submissionCode));
-                    
-                    const logDate = new Date(log.timestamp);
-                    const isToday = new Date().toDateString() === logDate.toDateString();
-                    
-                    let timeStr = logDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    let fullDateStr = isToday 
-                      ? `Hari ini, ${timeStr}`
-                      : `${formatDateIndonesian(log.timestamp.split('T')[0])} ${timeStr}`;
 
-                    // Category colors
-                    let catStyle = "bg-stone-100 text-stone-700 border-stone-200";
-                    if (log.category === 'success') {
-                      catStyle = "bg-emerald-50 text-emerald-800 border-emerald-150";
-                    } else if (log.category === 'warning') {
-                      catStyle = "bg-rose-50 text-rose-800 border-rose-150";
-                    } else if (log.category === 'info') {
-                      catStyle = "bg-sky-50 text-sky-800 border-sky-150";
-                    }
-
+              {isLoadingLogs ? (
+                <div className="py-12 text-center text-stone-400 flex flex-col items-center justify-center gap-3">
+                  <RefreshCw size={32} className="animate-spin text-amber-500" />
+                  <span className="text-xs font-bold text-stone-500">Menganalisis urutan transaksi...</span>
+                </div>
+              ) : missingVouchersAnalysis.length > 0 ? (
+                <div className="space-y-6">
+                  {missingVouchersAnalysis.map((group, idx) => {
+                    const totalMissing = group.missing.length;
                     return (
-                      <tr key={log.id} className="hover:bg-stone-50/40 transition">
-                        {/* Event Time */}
-                        <td className="py-3.5 px-6 whitespace-nowrap">
-                          <span className="text-[11px] text-stone-500 font-mono">{fullDateStr}</span>
-                        </td>
-
-                        {/* User identity */}
-                        <td className="py-3.5 px-6">
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center font-bold text-[10px] uppercase select-none font-sans shrink-0">
-                              {log.userName ? log.userName.charAt(0) : 'S'}
-                            </div>
-                            <div className="font-sans">
-                              <div className="font-bold text-stone-800 text-xs">{log.userName || 'Sistem'}</div>
-                              <div className="text-[10px] text-stone-400 font-mono leading-none">{log.userEmail || 'system_ledger'}</div>
-                            </div>
+                      <div key={idx} className="border border-stone-200 rounded-xl overflow-hidden shadow-3xs bg-white font-sans">
+                        {/* Group Header */}
+                        <div className="px-5 py-3.5 bg-stone-50 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="space-y-0.5 text-left">
+                            <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider">Prefix Kelompok</span>
+                            <h4 className="font-bold text-stone-800 text-sm font-mono">{group.prefix}</h4>
                           </div>
-                        </td>
+                          
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 bg-stone-200/60 text-stone-700 font-mono text-[10px] rounded-md" title="Jangkauan nomor sequence terdaftar">
+                              Rentang: {group.range}
+                            </span>
+                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold rounded-md">
+                              {group.activeCount} Voucher Aktif
+                            </span>
+                            {totalMissing > 0 ? (
+                              <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-100 font-mono text-[10px] font-black rounded-md animate-pulse">
+                                {totalMissing} Nomor Hilang
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-emerald-500 text-white font-mono text-[10px] font-bold rounded-md">
+                                Lengkap & Sesuai Urutan
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                        {/* Action Badge */}
-                        <td className="py-3.5 px-6 whitespace-nowrap">
-                          <span className={`px-2 py-0.5 border text-[10px] font-mono font-black rounded-lg ${catStyle}`}>
-                            {log.action.toUpperCase()}
-                          </span>
-                        </td>
+                        {/* Missing items list */}
+                        <div className="divide-y divide-stone-100">
+                          {totalMissing > 0 ? (
+                            group.missing.map((missingItem, mIdx) => {
+                              const delLog = missingItem.deletedLog;
+                              return (
+                                <div key={mIdx} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50/20 transition">
+                                  {/* Code and Sequence Number */}
+                                  <div className="flex items-center gap-3 text-left">
+                                    <span className="h-5 w-5 bg-stone-100 text-stone-600 font-mono font-bold text-[10px] rounded flex items-center justify-center shrink-0">
+                                      #{missingItem.sequence}
+                                    </span>
+                                    <div className="space-y-0.5">
+                                      <span className="font-bold font-mono text-stone-900 text-xs">
+                                        {missingItem.fullKode}
+                                      </span>
+                                      <p className="text-[10px] text-stone-400">Nomor voucher ini tidak terdaftar aktif di database.</p>
+                                    </div>
+                                  </div>
 
-                        {/* Audit Assertion details */}
-                        <td className="py-3.5 px-6">
-                          <p className="max-w-md break-all sm:break-normal text-stone-700 leading-normal font-sans text-xs">{log.details}</p>
-                        </td>
-
-                        {/* Actions link to submission */}
-                        <td className="py-3.5 px-6 whitespace-nowrap text-center font-sans">
-                          {affiliateSub ? (
-                            <button
-                              onClick={() => {
-                                onSelect(affiliateSub);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-stone-900 border border-stone-800 text-white hover:bg-stone-800 font-extrabold rounded-lg transition duration-150 text-[10px] cursor-pointer shadow-3xs"
-                              title="Buka / Cetak voucher transaksi yang sah"
-                            >
-                              <Eye size={11} className="text-[#D4AF37]" />
-                              <span>Lihat Voucher</span>
-                            </button>
-                          ) : log.submissionCode ? (
-                            <span className="text-[10px] text-stone-400 font-mono">ID: {log.submissionCode}</span>
+                                  {/* Status indicator / Deletion cross-reference */}
+                                  <div className="sm:text-right shrink-0 text-left">
+                                    {delLog ? (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center sm:justify-end gap-1.5 text-xs text-rose-600 font-bold">
+                                          <Trash2 size={12} />
+                                          <span>DIHAPUS RESMI</span>
+                                        </div>
+                                        <p className="text-[10px] text-stone-500">
+                                          Oleh <strong>{delLog.userName}</strong> pada {new Date(delLog.timestamp).toLocaleDateString('id-ID')}
+                                        </p>
+                                        <p className="text-[9.5px] text-stone-400 max-w-xs font-sans italic truncate sm:text-right" title={delLog.details}>
+                                          "{delLog.details}"
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center sm:justify-end gap-1.5 text-xs text-amber-600 font-black">
+                                          <AlertCircle size={12} />
+                                          <span>HILANG / TERLEWATKAN</span>
+                                        </div>
+                                        <p className="text-[10px] text-stone-400 max-w-xs leading-normal sm:text-right">
+                                          Tidak ada log penghapusan. Kemungkinan diloncati saat pembuatan transaksi manual.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
                           ) : (
-                            <span className="text-[10px] text-stone-300">-</span>
+                            <div className="p-6 text-center text-stone-400 text-xs flex items-center justify-center gap-2">
+                              <CheckCircle size={14} className="text-emerald-500" />
+                              <span>Hebat! Seluruh urutan nomor voucher dalam kelompok ini terisi lengkap tanpa ada celah (gap).</span>
+                            </div>
                           )}
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            ) : (
-              <div className="py-20 text-center text-stone-400 text-xs">
-                Belum terdaftar riwayat ataupun asersi kejadian dalam sistem log riwayat aktivitas.
-              </div>
-            )}
-          </div>
+                </div>
+              ) : (
+                <div className="py-20 text-center text-stone-400 text-xs flex flex-col items-center justify-center gap-2">
+                  <CheckCircle size={32} className="text-emerald-500" />
+                  <span className="font-bold text-stone-600">Urutan Voucher Sempurna!</span>
+                  <span>Tidak ditemukan celah atau nomor voucher yang hilang pada seluruh data aktif.</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
