@@ -843,7 +843,7 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
 
       {/* KPI Cards */}
       {layoutMode === 'standard' && unpaidInvoicesAllTime.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-3xs">
+        <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in shadow-3xs print:hidden">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-amber-500/20 text-amber-700 rounded-xl shrink-0 mt-0.5">
               <AlertCircle size={16} className="text-amber-600 animate-pulse" />
@@ -867,7 +867,7 @@ export const SubmissionsList: React.FC<SubmissionsListProps> = ({
       )}
 
       {layoutMode === 'standard' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:hidden">
           {/* Card 1 - Midnight Gold Accent */}
           <div className="relative overflow-hidden bg-stone-900 text-white p-6 rounded-2xl shadow-xs border border-stone-850 flex items-center justify-between group">
             <div className="absolute right-0 top-0 w-24 h-24 rounded-full blur-2xl transition-all group-hover:scale-125 opacity-25" style={{ backgroundColor: 'var(--brand-gold)' }}></div>
