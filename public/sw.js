@@ -1,7 +1,5 @@
-const CACHE_NAME = 'nmsa-portal-v1';
+const CACHE_NAME = 'nmsa-portal-v2';
 const ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/icon.svg',
   '/icon-maskable.svg'
@@ -48,6 +46,33 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // Network-First for main documents and navigations to prevent stale index.html issues
+  const isNavigation = e.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html';
+
+  if (isNavigation) {
+    e.respondWith(
+      fetch(e.request)
+        .then((networkResponse) => {
+          if (networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(e.request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          // If offline, try cached index.html or root
+          return caches.match(e.request).then((cachedResponse) => {
+            if (cachedResponse) return cachedResponse;
+            return caches.match('/index.html') || caches.match('/');
+          });
+        })
+    );
+    return;
+  }
+
+  // Cache-First (Stale-While-Revalidate) for other static assets
   e.respondWith(
     caches.match(e.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -69,11 +94,6 @@ self.addEventListener('fetch', (e) => {
           });
         }
         return networkResponse;
-      }).catch(() => {
-        // Safe navigation level fallback to allow direct page reloads offline
-        if (e.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
       });
     })
   );
