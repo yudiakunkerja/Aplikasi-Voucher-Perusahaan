@@ -34,7 +34,7 @@ export const DriveAccountsManager: React.FC<DriveAccountsManagerProps> = ({ onCo
     setErrorText('');
     setIsConnecting(true);
     try {
-      const result = await googleDriveLogin();
+      const result = await googleDriveLogin(undefined, true);
       if (result.accessToken) {
         loadDrives();
       }
@@ -46,11 +46,11 @@ export const DriveAccountsManager: React.FC<DriveAccountsManagerProps> = ({ onCo
     }
   };
 
-  const handleReconnectDrive = async () => {
+  const handleReconnectDrive = async (email?: string) => {
     setErrorText('');
     setIsConnecting(true);
     try {
-      const result = await googleDriveLogin();
+      const result = await googleDriveLogin(email);
       if (result.accessToken) {
         loadDrives();
       }
@@ -238,7 +238,7 @@ export const DriveAccountsManager: React.FC<DriveAccountsManagerProps> = ({ onCo
                       {drive.isExpired && (
                         <button
                           type="button"
-                          onClick={handleReconnectDrive}
+                          onClick={() => handleReconnectDrive(drive.email)}
                           disabled={isConnecting}
                           className="p-1.5 text-amber-600 hover:text-amber-800 rounded-lg hover:bg-amber-100/50 border border-amber-200 flex items-center gap-1 transition cursor-pointer shadow-4xs font-sans"
                           title="Sambungkan Ulang Sesi Token Google Drive Anda"

@@ -646,6 +646,10 @@ export const saveConnectedDrives = async (drives: ConnectedDrive[]) => {
     const bestToken = activeDrive ? activeDrive.accessToken : (drives[0]?.accessToken || null);
     setGoogleDriveToken(bestToken);
 
+    if (activeDrive) {
+      localStorage.setItem('NUSANTARA_LAST_ACTIVE_EMAIL', activeDrive.email);
+    }
+
     // Persist to Firestore under company document to share with all users of this company!
     if (firestoreDb && activeCompanyId) {
       const companyRef = doc(firestoreDb, 'companies', activeCompanyId);
@@ -747,7 +751,10 @@ export const getStoredGoogleDriveToken = (): string | null => {
   return fallbackDrive ? fallbackDrive.accessToken : null;
 };
 
-export const googleDriveLogin = async (): Promise<{ user: User; accessToken: string; driveDetails?: any }> => {
+export const googleDriveLogin = async (
+  loginHint?: string,
+  forceSelectAccount = false
+): Promise<{ user: User; accessToken: string; driveDetails?: any }> => {
   const config = getStoredFirebaseConfig();
   if (!config) {
     throw new Error('Database autentikasi belum beroperasi.');
@@ -769,10 +776,26 @@ export const googleDriveLogin = async (): Promise<{ user: User; accessToken: str
   const provider = new GoogleAuthProvider();
   // Request Google Drive File write/edit permissions - we use drive.file as full drive scope is restricted and blocked by Google without verification
   provider.addScope('https://www.googleapis.com/auth/drive.file');
-  // Prompt account selection to make it extremely easy to connect multiple DIFFERENT accounts!
-  provider.setCustomParameters({
-    prompt: 'select_account'
-  });
+
+  // Automatic previous account bypass logic
+  let lastEmail = loginHint || localStorage.getItem('NUSANTARA_LAST_ACTIVE_EMAIL');
+  if (!lastEmail) {
+    const drives = getConnectedDrives();
+    if (drives.length > 0) {
+      lastEmail = drives[0].email;
+    }
+  }
+
+  if (lastEmail && !forceSelectAccount) {
+    provider.setCustomParameters({
+      login_hint: lastEmail
+    });
+  } else {
+    // Prompt account selection to make it extremely easy to connect multiple DIFFERENT accounts!
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+  }
   
   try {
     const result = await signInWithPopup(secondaryAuth, provider);
@@ -796,6 +819,31 @@ export const googleDriveLogin = async (): Promise<{ user: User; accessToken: str
       };
     }
 
+    // Check if storage is full (quotaUsed is at least 98% of limit or less than 15MB remaining)
+    const limit = driveDetails.quotaLimit || 15 * 1024 * 1024 * 1024;
+    const used = driveDetails.quotaUsed || 0;
+    const remains = limit - used;
+    const isFull = remains <= 15 * 1024 * 1024; // Less than 15MB free
+
+    if (isFull) {
+      const usedGB = Math.round(used / (1024 * 1024 * 1024) * 100) / 100;
+      const limitGB = Math.round(limit / (1024 * 1024 * 1024));
+      window.alert(
+        `Penyimpanan Google Drive "${driveDetails.email}" telah penuh (Terisi: ${usedGB} GB dari ${limitGB} GB).\n\nSilakan pilih akun Google Drive cadangan atau akun Google ke-2 Anda untuk melanjutkan penyimpanan secara otomatis tanpa hambatan.`
+      );
+
+      // Clean up secondary auth session before switching
+      try {
+        await secondaryAuth.signOut();
+      } catch (e) {}
+
+      // Recursively connect backup/second account by forcing account selector
+      return googleDriveLogin(undefined, true);
+    }
+
+    // Store as last active email since it has available storage space
+    localStorage.setItem('NUSANTARA_LAST_ACTIVE_EMAIL', driveDetails.email);
+
     // Load existing connected drives list
     const currentDrives = getConnectedDrives();
     const newDrive: ConnectedDrive = {
@@ -817,7 +865,7 @@ export const googleDriveLogin = async (): Promise<{ user: User; accessToken: str
       currentDrives.push(newDrive);
     }
 
-    saveConnectedDrives(currentDrives);
+    await saveConnectedDrives(currentDrives);
 
     // Completely dispose of secondary auth session to keep memory clean
     try {
