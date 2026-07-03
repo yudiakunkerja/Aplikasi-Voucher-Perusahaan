@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Submission } from '../types';
 import { formatRupiah, formatDateIndonesian, numberToTerbilang } from '../utils';
 import { NusantaraLogo } from './NusantaraLogo';
-import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send } from 'lucide-react';
+import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send, Edit2 } from 'lucide-react';
 import { getStoredGoogleDriveToken, googleDriveLogin, saveSubmissionToFirestore } from '../firebase';
 
 interface PrintDocumentProps {
   submission: Submission;
   onBack: () => void;
+  onEdit?: () => void;
   userProfile?: any;
   initialTab?: 'both' | 'pengajuan' | 'pengeluaran' | 'lampiran' | 'only_invoice_payment';
 }
@@ -252,7 +253,7 @@ const syncDriveFilesToAppFormat = (driveFiles: any[], cleanJenis: string, cleanP
   });
 };
 
-export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, userProfile, initialTab }) => {
+export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran' | 'only_invoice_payment'>(
     initialTab || 'both'
   );
@@ -861,7 +862,16 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2.5 shrink-0 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full sm:w-auto">
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300 font-bold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-3xs text-sm shrink-0"
+              >
+                <Edit2 size={16} />
+                <span>Edit Transaksi</span>
+              </button>
+            )}
             <button
               onClick={() => setIsShareModalOpen(true)}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-3xs text-sm shrink-0"
@@ -901,7 +911,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
               }`}
             >
               <FileText size={13} />
-              Hanya Formulir Pengajuan
+              Hanya Pengajuan ( F1 & F2 )
             </button>
             <button
               onClick={() => setActiveTab('pengeluaran')}
@@ -910,7 +920,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
               }`}
             >
               <CheckCircle size={13} />
-              Hanya Bukti Pengeluaran
+              Hanya Bukti Bayar
             </button>
             {attachmentFiles.length > 0 && (
               <button
@@ -920,7 +930,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                 }`}
               >
                 <Cloud size={13} className="text-amber-600" />
-                Hanya Lampiran ({isLoadingPages ? '...' : renderedPages.length})
+                Hanya Lampiran
               </button>
             )}
             {attachmentFiles.some(f => f.docType === 'invoice_vendor' || f.isBuktiPembayaran) && (

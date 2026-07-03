@@ -895,6 +895,10 @@ export default function App() {
               setActiveSubmission(null);
               setView('list');
             }}
+            onEdit={() => {
+              setEditingSubmission(activeSubmission);
+              setView('form');
+            }}
           />
         )}
 
