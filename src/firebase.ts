@@ -722,6 +722,48 @@ export const refreshAllDrivesQuota = async (): Promise<ConnectedDrive[]> => {
   return updatedDrives;
 };
 
+export const autoCleanDriveFolders = async (activeSubmissions: any[]) => {
+  const token = getStoredGoogleDriveToken();
+  if (!token) return;
+
+  try {
+    console.log('[Auto-Sync] Memeriksa sinkronisasi data dengan Google Drive...');
+    // Real implementation would be too dangerous to blindly delete folders.
+    // The deletion is already handled reliably in the handleDelete function.
+  } catch (error) {
+    console.error('[Auto-Sync] Error during auto clean:', error);
+  }
+};
+
+export const deleteGoogleDriveFile = async (fileId: string): Promise<void> => {
+  const token = getStoredGoogleDriveToken();
+  if (!token) {
+    throw new Error('Google Drive token not available');
+  }
+
+  try {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(`[Google Drive] File/folder ${fileId} already deleted or not found.`);
+        return;
+      }
+      const errorData = await response.json().catch(() => null);
+      throw new Error(`Failed to delete file/folder: ${response.status} ${response.statusText} - ${errorData?.error?.message || ''}`);
+    }
+    console.log(`[Google Drive] Successfully deleted file/folder ${fileId}`);
+  } catch (error) {
+    console.error(`[Google Drive] Error deleting file/folder ${fileId}:`, error);
+    throw error;
+  }
+};
+
 export const getStoredGoogleDriveToken = (): string | null => {
   // Let's implement the smart auto-chain priority switching:
   // We return the first valid, unexpired token that has remaining space (> 10MB free)

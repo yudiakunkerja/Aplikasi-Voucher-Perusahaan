@@ -1009,7 +1009,8 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         // Name of subfolder under day folder named (Jenis_Pengajuan - Dibayarkan_Kepada)
         const cleanJenis = (jenisPengajuan || 'Pengajuan').trim().replace(/[\/\\?%*:|"<>.]/g, '');
         const cleanPenerima = (dibayarkanKepada || 'Penerima').trim().replace(/[\/\\?%*:|"<>.]/g, '');
-        const txFolderName = `${cleanJenis} - ${cleanPenerima}`;
+        const cleanKode = (kode || '').trim().replace(/[\/\\?%*:|"<>.]/g, '-');
+        const txFolderName = cleanKode ? `${cleanKode} - ${cleanJenis} - ${cleanPenerima}` : `${cleanJenis} - ${cleanPenerima}`;
 
         setSaveProgress(`6/6. Mencari/Membuat folder transaksi khusus: "${txFolderName}"...`);
         targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);

@@ -15,6 +15,7 @@ import {
   isFirebaseConfigured, 
   saveSubmissionToFirestore, 
   deleteSubmissionFromFirestore,
+  deleteGoogleDriveFile,
   registerAuthChangeListener,
   getUserProfileFromFirestore,
   loadSubmissionsFromFirestore,
@@ -274,6 +275,16 @@ export default function App() {
     const updated = submissions.filter((sub) => sub.id !== id);
     saveSubmissionsToStorage(updated);
     
+    // Auto-delete Google Drive folder if exists
+    if (targetSub?.googleDriveFolderId) {
+      try {
+        console.log(`[Auto-Sync] Menghapus folder transaksi dari Google Drive: ${targetSub.googleDriveFolderId}`);
+        await deleteGoogleDriveFile(targetSub.googleDriveFolderId);
+      } catch (err) {
+        console.warn('Gagal menghapus folder Google Drive saat menghapus transaksi:', err);
+      }
+    }
+
     if (isFirebaseConfigured()) {
       try {
         await deleteSubmissionFromFirestore(id);

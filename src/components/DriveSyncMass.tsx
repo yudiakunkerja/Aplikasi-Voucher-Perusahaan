@@ -713,7 +713,8 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
         // Name of transaction custom folder
         const cleanJenis = (sub.jenisPengajuan || 'Pengajuan').trim().replace(/[\/\\?%*:|"<>.]/g, '');
         const cleanPenerima = (sub.dibayarkanKepada || 'Penerima').trim().replace(/[\/\\?%*:|"<>.]/g, '');
-        const txFolderName = `${cleanJenis} - ${cleanPenerima}`;
+        const cleanKode = (sub.kode || '').trim().replace(/[\/\\?%*:|"<>.]/g, '-');
+        const txFolderName = cleanKode ? `${cleanKode} - ${cleanJenis} - ${cleanPenerima}` : `${cleanJenis} - ${cleanPenerima}`;
         const targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);
 
         addLog(`Folder Tujuan: /Voucher-APP/${folderCompanyUpper}/${yearStr}/${monthStr}/${dayStr}/${txFolderName}`);
