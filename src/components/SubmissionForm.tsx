@@ -757,8 +757,8 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
             return false;
           }
           const name = f.name || '';
-          if (name.startsWith('F1 - (') && name.endsWith(').pdf')) return false;
-          if (name.startsWith('F2 - (') && name.endsWith(').pdf')) return false;
+          if (name.startsWith('F1 - ') && name.endsWith('.pdf')) return false;
+          if (name.startsWith('F2 - ') && name.endsWith('.pdf')) return false;
           return true;
         });
         setFileItems(filteredAttachmentFiles.map((f, i) => ({
@@ -1006,11 +1006,20 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         const dayId = await getOrCreateFolder(token, dayStr, monthId);
         console.log(`[Drive Upload] Folder tanggal "${dayStr}" ID:`, dayId);
 
-        // Name of subfolder under day folder named (Jenis_Pengajuan - Dibayarkan_Kepada)
+        // Base name computation based on invoice or standard payment
         const cleanJenis = (jenisPengajuan || 'Pengajuan').trim().replace(/[\/\\?%*:|"<>.]/g, '');
         const cleanPenerima = (dibayarkanKepada || 'Penerima').trim().replace(/[\/\\?%*:|"<>.]/g, '');
         const cleanKode = (kode || '').trim().replace(/[\/\\?%*:|"<>.]/g, '-');
-        const txFolderName = cleanKode ? `${cleanKode} - ${cleanJenis} - ${cleanPenerima}` : `${cleanJenis} - ${cleanPenerima}`;
+        
+        let txBaseName = '';
+        if (isInvoice && invoiceNumber) {
+          const cleanInv = invoiceNumber.trim().replace(/[\/\\?%*:|"<>.]/g, '');
+          txBaseName = `Pembayaran-${cleanInv}`;
+        } else {
+          txBaseName = `Pembayaran-${cleanJenis}+${cleanPenerima}`;
+        }
+
+        const txFolderName = cleanKode ? `${cleanKode} - ${txBaseName}` : txBaseName;
 
         setSaveProgress(`6/6. Mencari/Membuat folder transaksi khusus: "${txFolderName}"...`);
         targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);
@@ -1039,7 +1048,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
 
               for (const file of filesToMove) {
                 // Skip files we're going to regenerate anyway (like F1 & F2) to avoid unnecessary move calls
-                if (file.name.startsWith('F1 - (') || file.name.startsWith('F2 - (')) {
+                if (file.name.startsWith('F1 - ') || file.name.startsWith('F2 - ')) {
                   continue;
                 }
                 setSaveProgress(`Memindahkan "${file.name}" ke folder baru...`);
@@ -1229,7 +1238,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         setSaveProgress('Membuat Dokumen PDF Bukti Pengeluaran Kas/Bank (F1)...');
         const f1PdfBytes = await generateF1PdfBytes(tempSubmissionForPdf, calculatedGrandTotal);
         setSaveProgress('Mengunggah Dokumen F1 ke Google Drive...');
-        const f1Data = await uploadFileToFolder(`F1 - (${cleanJenis} - ${cleanPenerima}).pdf`, 'application/pdf', f1PdfBytes, targetFolderId);
+        const f1Data = await uploadFileToFolder(`F1 - ${txBaseName}.pdf`, 'application/pdf', f1PdfBytes, targetFolderId);
         finalFiles.push({
           url: f1Data.url,
           name: f1Data.name,
@@ -1240,7 +1249,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         setSaveProgress('Membuat Dokumen PDF Form Pengajuan HO (F2)...');
         const f2PdfBytes = await generateF2PdfBytes(tempSubmissionForPdf, calculatedGrandTotal);
         setSaveProgress('Mengunggah Dokumen F2 ke Google Drive...');
-        const f2Data = await uploadFileToFolder(`F2 - (${cleanJenis} - ${cleanPenerima}).pdf`, 'application/pdf', f2PdfBytes, targetFolderId);
+        const f2Data = await uploadFileToFolder(`F2 - ${txBaseName}.pdf`, 'application/pdf', f2PdfBytes, targetFolderId);
         finalFiles.push({
           url: f2Data.url,
           name: f2Data.name,
@@ -1269,8 +1278,8 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
 
         const usedNames = new Set<string>();
         // Add system-generated files to usedNames to avoid conflicts
-        usedNames.add(`F1 - (${cleanJenis} - ${cleanPenerima}).pdf`.toLowerCase());
-        usedNames.add(`F2 - (${cleanJenis} - ${cleanPenerima}).pdf`.toLowerCase());
+        usedNames.add(`F1 - ${txBaseName}.pdf`.toLowerCase());
+        usedNames.add(`F2 - ${txBaseName}.pdf`.toLowerCase());
 
         let bCounter = 1;
         let invCounter = 1;
@@ -1279,8 +1288,10 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         for (let i = 0; i < fileItems.length; i++) {
           const item = fileItems[i];
           // Skip if they are older versions of generated F1/F2 files to avoid infinite loops / redundant pages
-          const isSystemGenerated = (item.name || '').startsWith('F1 - (') && (item.name || '').endsWith(').pdf') ||
-                                    (item.name || '').startsWith('F2 - (') && (item.name || '').endsWith(').pdf');
+          const nameStr = item.name || '';
+          const isSystemGenerated = 
+            (nameStr.startsWith('F1 - ') && nameStr.endsWith('.pdf')) ||
+            (nameStr.startsWith('F2 - ') && nameStr.endsWith('.pdf'));
           if (isSystemGenerated) {
             continue;
           }
@@ -1350,7 +1361,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
             bCounter++;
           }
 
-          const finalFileName = `${prefix} - (${cleanJenis} - ${cleanPenerima})${ext}`;
+          const finalFileName = `${prefix} - ${txBaseName}${ext}`;
           usedNames.add(finalFileName.toLowerCase());
 
           const resData = await uploadFileToFolder(finalFileName, mimeType, fileBytes, targetFolderId);
@@ -1382,7 +1393,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
             }
           }
           
-          const finalName = `BUKTI_BAYAR - (${cleanJenis} - ${cleanPenerima})${paymentExt}`;
+          const finalName = `BUKTI_BAYAR - ${txBaseName}${paymentExt}`;
           
           const uploadResult = await uploadFileToFolder(finalName, mime, bytes, folderBuktiBayarId);
           finalBuktiPembayaran = uploadResult;
@@ -1430,7 +1441,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
               }
             }
             
-            let pchyFinalName = `PettyCash - (${cleanJenis} - ${cleanPenerima})${pchyExt}`;
+            let pchyFinalName = `PettyCash - ${txBaseName}${pchyExt}`;
             
             const pchyUploadResult = await uploadFileToFolder(pchyFinalName, pchyMime, pchyBytes, pchyHierarchyId);
             finalPettyCashFile = pchyUploadResult;

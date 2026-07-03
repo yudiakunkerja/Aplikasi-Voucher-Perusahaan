@@ -714,7 +714,16 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
         const cleanJenis = (sub.jenisPengajuan || 'Pengajuan').trim().replace(/[\/\\?%*:|"<>.]/g, '');
         const cleanPenerima = (sub.dibayarkanKepada || 'Penerima').trim().replace(/[\/\\?%*:|"<>.]/g, '');
         const cleanKode = (sub.kode || '').trim().replace(/[\/\\?%*:|"<>.]/g, '-');
-        const txFolderName = cleanKode ? `${cleanKode} - ${cleanJenis} - ${cleanPenerima}` : `${cleanJenis} - ${cleanPenerima}`;
+        
+        let txBaseName = '';
+        if (sub.isInvoice && sub.invoiceNumber) {
+          const cleanInv = sub.invoiceNumber.trim().replace(/[\/\\?%*:|"<>.]/g, '');
+          txBaseName = `Pembayaran-${cleanInv}`;
+        } else {
+          txBaseName = `Pembayaran-${cleanJenis}+${cleanPenerima}`;
+        }
+
+        const txFolderName = cleanKode ? `${cleanKode} - ${txBaseName}` : txBaseName;
         const targetFolderId = await getOrCreateFolder(token, txFolderName, dayId);
 
         addLog(`Folder Tujuan: /Voucher-APP/${folderCompanyUpper}/${yearStr}/${monthStr}/${dayStr}/${txFolderName}`);
@@ -731,7 +740,7 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
         const f1PdfBytes = await generateF1PdfBytes(sub, grandTotal);
         const f1Data = await uploadFileToFolder(
           token,
-          `F1 - (${cleanJenis} - ${cleanPenerima}).pdf`,
+          `F1 - ${txBaseName}.pdf`,
           'application/pdf',
           f1PdfBytes,
           targetFolderId
@@ -747,7 +756,7 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
         const f2PdfBytes = await generateF2PdfBytes(sub, grandTotal);
         const f2Data = await uploadFileToFolder(
           token,
-          `F2 - (${cleanJenis} - ${cleanPenerima}).pdf`,
+          `F2 - ${txBaseName}.pdf`,
           'application/pdf',
           f2PdfBytes,
           targetFolderId
@@ -764,8 +773,8 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
             return false;
           }
           const name = f.name || '';
-          if (name.startsWith('F1 - (') && name.endsWith(').pdf')) return false;
-          if (name.startsWith('F2 - (') && name.endsWith(').pdf')) return false;
+          if (name.startsWith('F1 - ') && name.endsWith('.pdf')) return false;
+          if (name.startsWith('F2 - ') && name.endsWith('.pdf')) return false;
           return true;
         });
 
