@@ -10,7 +10,7 @@ interface PrintDocumentProps {
   onBack: () => void;
   onEdit?: () => void;
   userProfile?: any;
-  initialTab?: 'both' | 'pengajuan' | 'pengeluaran' | 'lampiran' | 'only_invoice_payment';
+  initialTab?: 'both' | 'pengajuan' | 'pengeluaran' | 'lampiran';
 }
 
 const getGoogleDriveEmbedUrl = (url: string): string => {
@@ -254,7 +254,7 @@ const syncDriveFilesToAppFormat = (driveFiles: any[], cleanJenis: string, cleanP
 };
 
 export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab }) => {
-  const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran' | 'only_invoice_payment'>(
+  const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran'>(
     initialTab || 'both'
   );
   const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
@@ -830,16 +830,19 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   };
 
   const visiblePages = renderedPages.filter(page => {
-    if (activeTab === 'only_invoice_payment') {
-      const fileObj = attachmentFiles[page.fileIndex];
-      return fileObj?.docType === 'invoice_vendor' || fileObj?.isBuktiPembayaran;
+    const fileObj = attachmentFiles[page.fileIndex];
+    if (activeTab === 'pengeluaran') {
+      return fileObj?.isBuktiPembayaran === true;
+    }
+    if (activeTab === 'lampiran') {
+      return !fileObj?.isBuktiPembayaran;
     }
     return true;
   });
 
-  const totalPagesCount = activeTab === 'only_invoice_payment'
-    ? visiblePages.length
-    : (activeTab === 'pengajuan' || activeTab === 'pengeluaran' ? 1 : (activeTab === 'lampiran' ? renderedPages.length : 2 + renderedPages.length));
+  const totalPagesCount = activeTab === 'pengajuan'
+    ? 2
+    : (activeTab === 'pengeluaran' || activeTab === 'lampiran' ? visiblePages.length : 2 + renderedPages.length);
 
   return (
     <div className="space-y-6">
@@ -931,18 +934,6 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
               >
                 <Cloud size={13} className="text-amber-600" />
                 Hanya Lampiran
-              </button>
-            )}
-            {attachmentFiles.some(f => f.docType === 'invoice_vendor' || f.isBuktiPembayaran) && (
-              <button
-                onClick={() => setActiveTab('only_invoice_payment')}
-                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition ${
-                  activeTab === 'only_invoice_payment' ? 'bg-amber-100 text-[#917118] border border-amber-200 shadow-3xs font-black' : 'text-stone-550 hover:text-stone-955'
-                }`}
-                title="Cetak khusus halaman berkas Invoice Vendor dan Bukti Pembayaran saja"
-              >
-                <FileText size={13} className="text-amber-600" />
-                Invoice & Bukti Bayar Saja
               </button>
             )}
           </div>
@@ -1164,7 +1155,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
       <div className="flex flex-col items-center space-y-8 print:space-y-0 print:bg-white">
         
         {/* ================= PAGE 1: BUKTI PENGELUARAN KAS / BANK ================= */}
-        {(activeTab === 'both' || activeTab === 'pengeluaran') && (
+        {(activeTab === 'both' || activeTab === 'pengajuan') && (
           <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
             
             {/* Header Block Left (Logo) & Right (Code & Tanggal) */}
@@ -1172,9 +1163,6 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
               <NusantaraLogo size="md" className="items-start text-left" companyName={userProfile?.companyName} />
 
               <div className="flex flex-col items-end pt-2">
-                <div className="text-right text-stone-400 font-mono text-[10px] mb-1">
-                  Halaman: 1 / {isLoadingPages ? '...' : totalPagesCount} (Kas/Bank)
-                </div>
                 {/* Double border or standard rectangular HO code box */}
                 <div className="border border-black px-8 py-1.5 font-bold text-base text-black bg-stone-50 mb-2 min-w-[120px] text-center font-mono">
                   {submission.kode}
@@ -1329,10 +1317,6 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             <div className="flex justify-between items-start mb-6">
               {/* Logo reconstructed with exact details */}
               <NusantaraLogo size="md" className="items-start text-left" companyName={userProfile?.companyName} />
-              
-              <div className="text-right text-stone-400 font-mono text-[10px] mt-2">
-                Halaman: 2 / {isLoadingPages ? '...' : totalPagesCount} (Pengajuan)
-              </div>
             </div>
 
             {/* Document Title Block */}
@@ -1476,8 +1460,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         )}
 
         {/* ================= PAGE 3+: LAMPIRAN DOKUMEN BUKTI (DYNAMIC SEVERAL PAGES) ================= */}
-        {(activeTab === 'both' || activeTab === 'lampiran' || activeTab === 'only_invoice_payment') && !isLoadingPages && visiblePages.map((page, idx) => {
-          const pageNum = activeTab === 'only_invoice_payment' ? (1 + idx) : (3 + idx);
+        {(activeTab === 'both' || activeTab === 'lampiran' || activeTab === 'pengeluaran') && !isLoadingPages && visiblePages.map((page, idx) => {
           const fileObj = attachmentFiles[page.fileIndex];
           const fileLabel = fileObj?.isBuktiPembayaran ? 'Bukti Bayar'
                           : fileObj?.docType === 'po' ? 'PO'
@@ -1678,14 +1661,6 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                     className="max-w-full max-h-full object-contain"
                   />
                 )}
-
-                {/* Floating screen-only badge to maintain complete page counts */}
-                <div className="absolute top-4 right-4 bg-stone-900/85 text-white font-mono text-[9px] px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5 select-none print:hidden z-10">
-                  <FileText size={10} className="text-amber-400" />
-                  <span>
-                    Halaman {pageNum} / {totalPagesCount} ({fileLabel} - Hal {page.pageNumber} - {isLandscape ? 'Landscape' : 'Portrait'})
-                  </span>
-                </div>
               </div>
             </React.Fragment>
           );
