@@ -24,7 +24,7 @@ import {
   saveActivityLogToFirestore,
   getSubmissionFromFirestore
 } from './firebase';
-import { Database, FileText, CheckSquare, ShieldCheck, Heart, Cloud, Palette, Loader2, ArrowRight, LogIn } from 'lucide-react';
+import { Database, FileText, CheckSquare, ShieldCheck, Heart, Cloud, Palette, Loader2, ArrowRight, LogIn, Printer } from 'lucide-react';
 
 export default function App() {
   const [theme, setTheme] = useState<'classic' | 'gold-dark' | 'emerald' | 'slate'>(() => {
@@ -542,11 +542,11 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => navigateTo('/')}
+              onClick={() => window.print()}
               className="flex items-center gap-1.5 bg-white text-amber-700 font-bold px-3.5 py-1.5 rounded-xl text-xs hover:bg-stone-100 transition cursor-pointer shadow-3xs"
             >
-              <LogIn size={13} />
-              Masuk Aplikasi
+              <Printer size={13} />
+              Cetak Dokumen
             </button>
           </div>
         </header>
@@ -595,6 +595,7 @@ export default function App() {
                   }
                 }}
                 initialTab="both"
+                isSharedView={true}
                 onBack={() => navigateTo('/')}
                 onUpdateSubmission={(updated) => setSharedSubmission(updated)}
               />

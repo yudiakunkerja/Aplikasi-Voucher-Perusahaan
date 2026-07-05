@@ -12,6 +12,7 @@ interface PrintDocumentProps {
   userProfile?: any;
   initialTab?: 'both' | 'pengajuan' | 'pengeluaran' | 'lampiran';
   onUpdateSubmission?: (updated: Submission) => void;
+  isSharedView?: boolean;
 }
 
 const getGoogleDriveEmbedUrl = (url: string): string => {
@@ -334,7 +335,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
   );
 };
 
-export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab, onUpdateSubmission }) => {
+export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab, onUpdateSubmission, isSharedView }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran'>(
     initialTab || 'both'
   );
@@ -1063,7 +1064,8 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   return (
     <div className="space-y-6">
       {/* Tab Controls / Print Actions */}
-      <div className="bg-white rounded-2xl border border-stone-250 shadow-xs p-5 space-y-4 print:hidden">
+      {!isSharedView && (
+        <div className="bg-white rounded-2xl border border-stone-250 shadow-xs p-5 space-y-4 print:hidden">
         {/* Row 1: Title block & Action buttons */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-stone-100">
           <div className="flex items-center gap-3 text-left">
@@ -1293,7 +1295,8 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             </div>
           );
         })()}
-      </div>
+        </div>
+      )}
 
       {/* Confirm Delete Pages Modal */}
       {isConfirmDeleteOpen && (() => {
@@ -1862,17 +1865,19 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   }`}
                 >
                   {/* Floating Action for Hiding / Deleting Page from PDF Print */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeletedPageIds(prev => [...prev, page.id]);
-                    }}
-                    className="absolute top-4 right-4 bg-rose-600 hover:bg-rose-700 text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-rose-500 transition-all z-20 cursor-pointer print:hidden hover:scale-105 active:scale-95"
-                    title="Hapus Halaman Ini"
-                  >
-                    <Trash2 size={13} />
-                    <span>Hapus Halaman</span>
-                  </button>
+                  {!isSharedView && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletedPageIds(prev => [...prev, page.id]);
+                      }}
+                      className="absolute top-4 right-4 bg-rose-600 hover:bg-rose-700 text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-rose-500 transition-all z-20 cursor-pointer print:hidden hover:scale-105 active:scale-95"
+                      title="Hapus Halaman Ini"
+                    >
+                      <Trash2 size={13} />
+                      <span>Hapus Halaman</span>
+                    </button>
+                  )}
 
                   {page.isPlaceholder && page.fileId ? (
                     <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100">
