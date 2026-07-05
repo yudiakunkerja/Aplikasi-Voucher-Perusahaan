@@ -299,14 +299,14 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
     return (
       <div 
         ref={containerRef} 
-        className="w-full flex flex-col items-center justify-center print:block print:w-auto overflow-hidden"
+        className="w-full flex flex-col items-center justify-center print:!block print:!w-auto print:!h-auto print:!overflow-visible"
       >
         <div 
           style={{ 
             width: `${targetWidth * scale}px`,
             height: `${targetHeight * scale}px`,
           }}
-          className="relative overflow-hidden flex items-start justify-start print:w-auto print:h-auto print:overflow-visible"
+          className="relative overflow-hidden flex items-start justify-start print:!w-auto print:!h-auto print:!overflow-visible print:!block"
         >
           <div 
             style={{ 
@@ -315,7 +315,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
               width: `${targetWidth}px`,
               height: `${targetHeight}px`,
             }}
-            className="print:transform-none print:w-auto print:h-auto print:overflow-visible origin-top-left shrink-0"
+            className="origin-top-left shrink-0 print:!transform-none print:!w-auto print:!h-auto print:!overflow-visible print:!block print:!p-0 print:!m-0"
           >
             {children}
           </div>
@@ -327,7 +327,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
   // Normal scale (no scaling needed)
   return (
     <div ref={containerRef} className="w-full flex flex-col items-center print:block print:w-auto">
-      <div className="shrink-0">
+      <div className="shrink-0 print:block print:w-auto print:h-auto print:overflow-visible">
         {children}
       </div>
     </div>
