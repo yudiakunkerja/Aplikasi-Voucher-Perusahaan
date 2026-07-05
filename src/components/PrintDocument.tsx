@@ -268,8 +268,12 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
   useEffect(() => {
     const handleResize = () => {
       if (!containerRef.current) return;
-      // Get the width of the parent container on screen
-      const parentWidth = containerRef.current.parentElement?.getBoundingClientRect().width || window.innerWidth;
+      const viewportWidth = window.innerWidth;
+      const parentRectWidth = containerRef.current.parentElement?.getBoundingClientRect().width || viewportWidth;
+      
+      // Resolve circular dependency where parent stretches to fit child:
+      // We bound parentRectWidth by viewportWidth to ensure it never exceeds the screen width on mobile devices.
+      const parentWidth = Math.min(parentRectWidth, viewportWidth);
       const padding = 24; // responsive margin padding
       const availableWidth = parentWidth - padding;
       
@@ -335,7 +339,8 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
     initialTab || 'both'
   );
   const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
-  const [deletedPageIds, setDeletedPageIds] = useState<string[]>(submission.deletedPageIds || []);
+  const [deletedPageIds, setDeletedPageIds] = useState<string[]>([]);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isSavingPages, setIsSavingPages] = useState(false);
   const [savePagesSuccess, setSavePagesSuccess] = useState(false);
   const [isLoadingPages, setIsLoadingPages] = useState(false);
@@ -355,9 +360,9 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   const [syncedDriveFiles, setSyncedDriveFiles] = useState<any[]>(() => submission.googleDriveFiles || []);
   const [isSyncingDriveFiles, setIsSyncingDriveFiles] = useState(false);
 
-  // Sync deleted pages state when submission prop changes
+  // Sync deleted pages state when submission prop changes (reset local changes on save)
   useEffect(() => {
-    setDeletedPageIds(submission.deletedPageIds || []);
+    setDeletedPageIds([]);
   }, [submission.deletedPageIds]);
 
   // Sync files from Google Drive in real-time
@@ -914,14 +919,105 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
     window.print();
   };
 
+  const getFilesToBeDeletedFromDrive = (): any[] => {
+    const token = getStoredGoogleDriveToken();
+    if (!token) return [];
+
+    const filesToDelete: any[] = [];
+    
+    attachmentFiles.forEach((file, fileIdx) => {
+      // Find all pages belonging to this file index in renderedPages
+      const pagesForFile = renderedPages.filter(p => p.fileIndex === fileIdx);
+      if (pagesForFile.length === 0) return;
+
+      // Check if every page for this file is in the newly deleted page IDs
+      const allPagesDeleted = pagesForFile.every(p => deletedPageIds.includes(p.id));
+      if (allPagesDeleted) {
+        // Find the Google Drive file ID
+        const url = file.url || '';
+        const dMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+        const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        const fileId = (dMatch && dMatch[1]) || (idMatch && idMatch[1]);
+        if (fileId) {
+          filesToDelete.push({
+            fileId,
+            name: file.name,
+            fileIndex: fileIdx
+          });
+        }
+      }
+    });
+
+    return filesToDelete;
+  };
+
   const handleSaveDeletedPages = async () => {
     setIsSavingPages(true);
     setSavePagesSuccess(false);
+    setIsConfirmDeleteOpen(false);
     try {
+      const token = getStoredGoogleDriveToken();
+      const filesToDelete = getFilesToBeDeletedFromDrive();
+      
+      // Delete from Google Drive if token and file IDs are present
+      if (token && filesToDelete.length > 0) {
+        for (const file of filesToDelete) {
+          try {
+            await fetch(`https://www.googleapis.com/drive/v3/files/${file.fileId}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            console.log(`Deleted file ${file.name} from Google Drive.`);
+          } catch (driveErr) {
+            console.error(`Failed to delete file ${file.name} from Google Drive:`, driveErr);
+          }
+        }
+      }
+
+      // Update submission state
+      const mergedDeletedPageIds = [
+        ...(submission.deletedPageIds || []),
+        ...deletedPageIds
+      ];
+
+      // Remove deleted files from the submission's file list to synchronize
+      let updatedFiles = submission.googleDriveFiles ? [...submission.googleDriveFiles] : [];
+      let updatedFileUrl = submission.googleDriveFileUrl;
+      let updatedFileName = submission.googleDriveFileName;
+
+      if (filesToDelete.length > 0) {
+        const deletedIds = filesToDelete.map(f => f.fileId);
+        
+        // Filter out deleted files from googleDriveFiles list
+        if (submission.googleDriveFiles) {
+          updatedFiles = submission.googleDriveFiles.filter(f => {
+            const fMatch = f.url?.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || f.url?.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            const fId = fMatch ? fMatch[1] : null;
+            return !deletedIds.includes(fId);
+          });
+        }
+
+        // If the main legacy URL matches a deleted file, clear it
+        if (submission.googleDriveFileUrl) {
+          const lMatch = submission.googleDriveFileUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || submission.googleDriveFileUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+          const lId = lMatch ? lMatch[1] : null;
+          if (deletedIds.includes(lId)) {
+            updatedFileUrl = '';
+            updatedFileName = '';
+          }
+        }
+      }
+
       const updatedSubmission: Submission = {
         ...submission,
-        deletedPageIds: deletedPageIds
+        deletedPageIds: mergedDeletedPageIds,
+        googleDriveFiles: updatedFiles,
+        googleDriveFileUrl: updatedFileUrl,
+        googleDriveFileName: updatedFileName
       };
+
       await saveSubmissionToFirestore(
         updatedSubmission,
         userProfile?.companyId || 'nmsa',
@@ -935,6 +1031,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
       // Trigger success state
       setSavePagesSuccess(true);
+      setDeletedPageIds([]); // Reset local state
       setTimeout(() => setSavePagesSuccess(false), 3000);
     } catch (err: any) {
       console.error("Failed to save deleted pages:", err);
@@ -945,7 +1042,8 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   };
 
   const visiblePages = renderedPages.filter(page => {
-    if (deletedPageIds.includes(page.id)) {
+    const savedDeletedIds = submission.deletedPageIds || [];
+    if (savedDeletedIds.includes(page.id) || deletedPageIds.includes(page.id)) {
       return false;
     }
     const fileObj = attachmentFiles[page.fileIndex];
@@ -1141,11 +1239,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
         {/* Row 3: Page Customization / Filter Controls */}
         {(() => {
-          const dbIds = submission.deletedPageIds || [];
-          const isDifferentFromDB = dbIds.length !== deletedPageIds.length || 
-            JSON.stringify([...dbIds].sort()) !== JSON.stringify([...deletedPageIds].sort());
-
-          if (deletedPageIds.length === 0 && !isDifferentFromDB) return null;
+          if (deletedPageIds.length === 0) return null;
 
           return (
             <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 bg-amber-50/70 border border-amber-200 text-amber-950 text-xs rounded-xl print:hidden">
@@ -1154,62 +1248,139 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   <FileText size={14} />
                 </span>
                 <span>
-                  {deletedPageIds.length > 0 ? (
-                    <>Terdapat <strong>{deletedPageIds.length}</strong> halaman lampiran disembunyikan dari cetakan PDF ini.</>
-                  ) : (
-                    <>Semua halaman telah dipulihkan. Simpan perubahan untuk memperbarui di database.</>
-                  )}
-                  {isDifferentFromDB && (
-                    <span className="text-stone-500 ml-1 font-semibold block sm:inline">
-                      (Perubahan belum disimpan)
-                    </span>
-                  )}
+                  Terdapat <strong>{deletedPageIds.length}</strong> halaman lampiran baru disembunyikan dari cetakan PDF ini.
+                  <span className="text-stone-500 ml-1 font-semibold block sm:inline">
+                    (Perubahan belum disimpan)
+                  </span>
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {deletedPageIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setDeletedPageIds([])}
-                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0"
-                  >
-                    Pulihkan Semua Halaman
-                  </button>
-                )}
-                {isDifferentFromDB && (
-                  <button
-                    type="button"
-                    disabled={isSavingPages}
-                    onClick={handleSaveDeletedPages}
-                    className={`px-3.5 py-1.5 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0 flex items-center gap-1.5 ${
-                      savePagesSuccess 
-                        ? 'bg-emerald-600 hover:bg-emerald-700' 
-                        : 'bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50'
-                    }`}
-                  >
-                    {isSavingPages ? (
-                      <>
-                        <Loader2 size={12} className="animate-spin" />
-                        <span>Menyimpan...</span>
-                      </>
-                    ) : savePagesSuccess ? (
-                      <>
-                        <CheckCircle size={12} />
-                        <span>Tersimpan!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check size={12} />
-                        <span>Simpan Konfigurasi</span>
-                      </>
-                    )}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setDeletedPageIds([])}
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0"
+                >
+                  Pulihkan Semua Halaman
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingPages}
+                  onClick={() => setIsConfirmDeleteOpen(true)}
+                  className={`px-3.5 py-1.5 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0 flex items-center gap-1.5 ${
+                    savePagesSuccess 
+                      ? 'bg-emerald-600 hover:bg-emerald-700' 
+                      : 'bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50'
+                  }`}
+                >
+                  {isSavingPages ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : savePagesSuccess ? (
+                    <>
+                      <CheckCircle size={12} />
+                      <span>Tersimpan!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={12} />
+                      <span>Simpan Konfigurasi</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           );
         })()}
       </div>
+
+      {/* Confirm Delete Pages Modal */}
+      {isConfirmDeleteOpen && (() => {
+        const filesToDelete = getFilesToBeDeletedFromDrive();
+        const hasToken = !!getStoredGoogleDriveToken();
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] print:hidden">
+            <div className="bg-white rounded-2xl max-w-md w-full border border-stone-200 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left">
+              {/* Header */}
+              <div className="p-5 border-b border-stone-100 flex items-center gap-3 bg-rose-50 text-rose-900">
+                <div className="p-2 bg-rose-100 rounded-xl text-rose-700 shrink-0">
+                  <ShieldAlert size={20} />
+                </div>
+                <div>
+                  <h3 className="font-sans font-black text-stone-900 text-sm leading-tight">Peringatan Penghapusan Permanen</h3>
+                  <p className="text-[10px] text-rose-700 font-mono">Tindakan ini tidak dapat dibatalkan</p>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-4 font-sans text-sm">
+                <div className="bg-rose-50/50 border border-rose-200 rounded-xl p-4 text-xs text-rose-950 leading-relaxed space-y-2">
+                  <p className="font-semibold text-rose-900">
+                    Apakah Anda yakin ingin menyimpan perubahan konfigurasi halaman ini?
+                  </p>
+                  <p>
+                    Halaman yang sudah Anda hapus (jumlah: <strong>{deletedPageIds.length}</strong>) akan disembunyikan secara <strong>permanen</strong> dari tampilan cetak dokumen dan tidak akan pernah bisa dipulihkan kembali seperti semula.
+                  </p>
+                </div>
+
+                {filesToDelete.length > 0 && (
+                  <div className="space-y-2 bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs">
+                    <p className="font-bold text-stone-700 uppercase tracking-wide text-[9px] font-mono">
+                      Sinkronisasi Google Drive:
+                    </p>
+                    <p className="text-stone-600">
+                      Karena seluruh halaman dari berkas berikut telah Anda hapus, sistem juga akan menghapus berkas asli ini dari folder Google Drive Anda agar data tetap sinkron:
+                    </p>
+                    <ul className="list-disc pl-4 space-y-1 font-mono text-[10px] text-amber-800">
+                      {filesToDelete.map((f, idx) => (
+                        <li key={idx} className="truncate max-w-full">
+                          {f.name}
+                        </li>
+                      ))}
+                    </ul>
+                    {!hasToken && (
+                      <p className="text-[9px] text-amber-600 font-medium italic mt-1.5">
+                        * Catatan: Penghapusan berkas di Google Drive memerlukan koneksi otorisasi Google Drive Anda yang aktif.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-stone-50 border-t border-stone-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmDeleteOpen(false)}
+                  className="bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveDeletedPages}
+                  disabled={isSavingPages}
+                  className="bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  {isSavingPages ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash size={13} />
+                      <span>Ya, Hapus Permanen</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Share Modal Dialog Box */}
       {isShareModalOpen && (() => {
