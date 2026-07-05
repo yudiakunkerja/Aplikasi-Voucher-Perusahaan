@@ -257,12 +257,17 @@ const syncDriveFilesToAppFormat = (driveFiles: any[], cleanJenis: string, cleanP
 const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: boolean }> = ({ children, isLandscape }) => {
   const [scale, setScale] = useState(1);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const targetWidth = isLandscape ? 1122 : 794;
+  
+  // A4 dimensions at 96 DPI: 
+  // Portrait: 210mm x 297mm -> 794px x 1123px
+  // Landscape: 297mm x 210mm -> 1123px x 794px
+  const targetWidth = isLandscape ? 1123 : 794;
+  const targetHeight = isLandscape ? 794 : 1123;
 
   useEffect(() => {
     const handleResize = () => {
       if (!containerRef.current) return;
-      // Use the element's actual container width, bounded by window width
+      // Get the width of the parent container on screen
       const parentWidth = containerRef.current.parentElement?.getBoundingClientRect().width || window.innerWidth;
       const padding = 24; // responsive margin padding
       const availableWidth = parentWidth - padding;
@@ -277,7 +282,6 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
     handleResize();
     window.addEventListener('resize', handleResize);
     
-    // Slight timeout handles delayed animations and layout renders
     const timer = setTimeout(handleResize, 150);
 
     return () => {
@@ -286,23 +290,39 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
     };
   }, [targetWidth]);
 
-  // Height of A4 page is 297mm for portrait, 210mm for landscape.
-  // We offset the empty vertical space caused by CSS scale using a matching negative margin.
-  const originalHeightMm = isLandscape ? 210 : 297;
-  const scaledMarginBottom = scale < 1 
-    ? `calc(${(scale - 1) * originalHeightMm}mm + 1.5rem)`
-    : undefined;
+  if (scale < 1) {
+    return (
+      <div 
+        ref={containerRef} 
+        className="w-full flex flex-col items-center justify-center print:block print:w-auto overflow-hidden"
+      >
+        <div 
+          style={{ 
+            width: `${targetWidth * scale}px`,
+            height: `${targetHeight * scale}px`,
+          }}
+          className="relative overflow-hidden flex items-start justify-center print:w-auto print:h-auto print:overflow-visible"
+        >
+          <div 
+            style={{ 
+              transform: `scale(${scale})`, 
+              transformOrigin: 'top left',
+              width: `${targetWidth}px`,
+              height: `${targetHeight}px`,
+            }}
+            className="print:transform-none print:w-auto print:h-auto print:overflow-visible origin-top-left shrink-0"
+          >
+            {children}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // Normal scale (no scaling needed)
   return (
     <div ref={containerRef} className="w-full flex flex-col items-center print:block print:w-auto">
-      <div 
-        style={{ 
-          transform: scale < 1 ? `scale(${scale})` : undefined, 
-          transformOrigin: 'top center',
-          marginBottom: scaledMarginBottom
-        }}
-        className="print:transform-none print:margin-0 transition-all duration-150 shrink-0"
-      >
+      <div className="shrink-0">
         {children}
       </div>
     </div>
@@ -314,7 +334,9 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
     initialTab || 'both'
   );
   const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
-  const [deletedPageIds, setDeletedPageIds] = useState<string[]>([]);
+  const [deletedPageIds, setDeletedPageIds] = useState<string[]>(submission.deletedPageIds || []);
+  const [isSavingPages, setIsSavingPages] = useState(false);
+  const [savePagesSuccess, setSavePagesSuccess] = useState(false);
   const [isLoadingPages, setIsLoadingPages] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -886,6 +908,30 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
     window.print();
   };
 
+  const handleSaveDeletedPages = async () => {
+    setIsSavingPages(true);
+    setSavePagesSuccess(false);
+    try {
+      const updatedSubmission: Submission = {
+        ...submission,
+        deletedPageIds: deletedPageIds
+      };
+      await saveSubmissionToFirestore(
+        updatedSubmission,
+        userProfile?.companyId || 'nmsa',
+        userProfile?.companyName || 'PT Nusantara Mineral Sukses Abadi'
+      );
+      // Trigger success state
+      setSavePagesSuccess(true);
+      setTimeout(() => setSavePagesSuccess(false), 3000);
+    } catch (err: any) {
+      console.error("Failed to save deleted pages:", err);
+      alert("Gagal menyimpan susunan halaman: " + (err.message || String(err)));
+    } finally {
+      setIsSavingPages(false);
+    }
+  };
+
   const visiblePages = renderedPages.filter(page => {
     if (deletedPageIds.includes(page.id)) {
       return false;
@@ -1082,25 +1128,75 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         </div>
 
         {/* Row 3: Page Customization / Filter Controls */}
-        {deletedPageIds.length > 0 && (
-          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 bg-amber-50/70 border border-amber-200 text-amber-950 text-xs rounded-xl">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-amber-100/80 rounded-lg text-amber-800 shrink-0">
-                <FileText size={14} />
-              </span>
-              <span>
-                Terdapat <strong>{deletedPageIds.length}</strong> halaman lampiran disembunyikan/dihapus dari cetakan PDF ini.
-              </span>
+        {(() => {
+          const dbIds = submission.deletedPageIds || [];
+          const isDifferentFromDB = dbIds.length !== deletedPageIds.length || 
+            JSON.stringify([...dbIds].sort()) !== JSON.stringify([...deletedPageIds].sort());
+
+          if (deletedPageIds.length === 0 && !isDifferentFromDB) return null;
+
+          return (
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 bg-amber-50/70 border border-amber-200 text-amber-950 text-xs rounded-xl print:hidden">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-amber-100/80 rounded-lg text-amber-800 shrink-0">
+                  <FileText size={14} />
+                </span>
+                <span>
+                  {deletedPageIds.length > 0 ? (
+                    <>Terdapat <strong>{deletedPageIds.length}</strong> halaman lampiran disembunyikan dari cetakan PDF ini.</>
+                  ) : (
+                    <>Semua halaman telah dipulihkan. Simpan perubahan untuk memperbarui di database.</>
+                  )}
+                  {isDifferentFromDB && (
+                    <span className="text-stone-500 ml-1 font-semibold block sm:inline">
+                      (Perubahan belum disimpan)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {deletedPageIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDeletedPageIds([])}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0"
+                  >
+                    Pulihkan Semua Halaman
+                  </button>
+                )}
+                {isDifferentFromDB && (
+                  <button
+                    type="button"
+                    disabled={isSavingPages}
+                    onClick={handleSaveDeletedPages}
+                    className={`px-3.5 py-1.5 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0 flex items-center gap-1.5 ${
+                      savePagesSuccess 
+                        ? 'bg-emerald-600 hover:bg-emerald-700' 
+                        : 'bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50'
+                    }`}
+                  >
+                    {isSavingPages ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : savePagesSuccess ? (
+                      <>
+                        <CheckCircle size={12} />
+                        <span>Tersimpan!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={12} />
+                        <span>Simpan Konfigurasi</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setDeletedPageIds([])}
-              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0"
-            >
-              Pulihkan Semua Halaman
-            </button>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Share Modal Dialog Box */}

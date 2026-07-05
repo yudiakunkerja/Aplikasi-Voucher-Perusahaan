@@ -206,7 +206,8 @@ export const mapFirestoreToSubmission = (docId: string, data: any): Submission =
     pettyCashFile: data.pettyCashFile || undefined,
 
     items: mappedItems,
-    createdAt: createdAtStr
+    createdAt: createdAtStr,
+    deletedPageIds: Array.isArray(data.deletedPageIds) ? data.deletedPageIds : []
   };
 };
 
@@ -341,7 +342,8 @@ export const mapSubmissionToFirestore = (
     disetujuiOleh2: sub.disetujuiOleh2 || '',
     disetujuiJabatan2: sub.disetujuiJabatan2 || '',
     dibukukanOleh: sub.dibukukanOleh || '',
-    dibukukanJabatan: sub.dibukukanJabatan || ''
+    dibukukanJabatan: sub.dibukukanJabatan || '',
+    deletedPageIds: sub.deletedPageIds || []
   };
 };
 

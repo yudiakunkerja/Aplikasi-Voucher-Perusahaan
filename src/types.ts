@@ -55,6 +55,7 @@ export interface Submission {
 
   items: SubmissionItem[];
   createdAt: string;
+  deletedPageIds?: string[];
 }
 
 export interface ActivityLog {
