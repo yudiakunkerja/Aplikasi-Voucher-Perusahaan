@@ -272,16 +272,18 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
             <NusantaraLogo size="lg" className="w-[240px] justify-center" />
           </div>
 
-          <div className="space-y-1">
-            <h2 className="text-sm font-bold tracking-widest text-amber-500 uppercase font-mono">
-              PT. NUSANTARA MINERAL
+          <div className="space-y-2">
+            <h2 className="text-amber-500 text-xl font-black uppercase tracking-wide">
+              Aplikasi Voucher
             </h2>
-            <p className="text-white text-base font-black tracking-tight">
-              Portal Pembayaran & Kasir Utama (HO)
+            <p className="text-white text-sm font-bold tracking-tight">
+              PT. Nusantara Mineral Sukses Abadi
             </p>
-            <span className="inline-block text-[10px] font-mono tracking-wider text-stone-400 bg-stone-800/65 px-2.5 py-0.5 rounded-full font-bold">
-              Versi Pro 2.6 • Sesi Aman & Terenkripsi
-            </span>
+            <div className="pt-1.5">
+              <span className="inline-block text-[10.5px] italic font-mono text-stone-300 bg-stone-800/80 px-3 py-1 rounded-lg border border-stone-700">
+                Aplikasi ini dibuat oleh : Nur Wahyudi
+              </span>
+            </div>
           </div>
         </div>
 

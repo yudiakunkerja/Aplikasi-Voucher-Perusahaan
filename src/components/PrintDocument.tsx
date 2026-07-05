@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Submission } from '../types';
 import { formatRupiah, formatDateIndonesian, numberToTerbilang } from '../utils';
 import { NusantaraLogo } from './NusantaraLogo';
-import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send, Edit2 } from 'lucide-react';
+import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send, Edit2, Trash, Trash2 } from 'lucide-react';
 import { getStoredGoogleDriveToken, googleDriveLogin, saveSubmissionToFirestore } from '../firebase';
 
 interface PrintDocumentProps {
@@ -253,11 +253,68 @@ const syncDriveFilesToAppFormat = (driveFiles: any[], cleanJenis: string, cleanP
   });
 };
 
+// PageScaleWrapper wraps a print sheet to fit the responsive layout of the viewport on screen while remaining unscaled in print
+const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: boolean }> = ({ children, isLandscape }) => {
+  const [scale, setScale] = useState(1);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const targetWidth = isLandscape ? 1122 : 794;
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (!containerRef.current) return;
+      // Use the element's actual container width, bounded by window width
+      const parentWidth = containerRef.current.parentElement?.getBoundingClientRect().width || window.innerWidth;
+      const padding = 24; // responsive margin padding
+      const availableWidth = parentWidth - padding;
+      
+      if (availableWidth < targetWidth) {
+        setScale(availableWidth / targetWidth);
+      } else {
+        setScale(1);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    
+    // Slight timeout handles delayed animations and layout renders
+    const timer = setTimeout(handleResize, 150);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, [targetWidth]);
+
+  // Height of A4 page is 297mm for portrait, 210mm for landscape.
+  // We offset the empty vertical space caused by CSS scale using a matching negative margin.
+  const originalHeightMm = isLandscape ? 210 : 297;
+  const scaledMarginBottom = scale < 1 
+    ? `calc(${(scale - 1) * originalHeightMm}mm + 1.5rem)`
+    : undefined;
+
+  return (
+    <div ref={containerRef} className="w-full flex flex-col items-center print:block print:w-auto">
+      <div 
+        style={{ 
+          transform: scale < 1 ? `scale(${scale})` : undefined, 
+          transformOrigin: 'top center',
+          marginBottom: scaledMarginBottom
+        }}
+        className="print:transform-none print:margin-0 transition-all duration-150 shrink-0"
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran'>(
     initialTab || 'both'
   );
   const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
+  const [deletedPageIds, setDeletedPageIds] = useState<string[]>([]);
   const [isLoadingPages, setIsLoadingPages] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -830,6 +887,9 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   };
 
   const visiblePages = renderedPages.filter(page => {
+    if (deletedPageIds.includes(page.id)) {
+      return false;
+    }
     const fileObj = attachmentFiles[page.fileIndex];
     if (activeTab === 'pengeluaran') {
       return fileObj?.isBuktiPembayaran === true;
@@ -842,7 +902,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
   const totalPagesCount = activeTab === 'pengajuan'
     ? 2
-    : (activeTab === 'pengeluaran' || activeTab === 'lampiran' ? visiblePages.length : 2 + renderedPages.length);
+    : (activeTab === 'pengeluaran' || activeTab === 'lampiran' ? visiblePages.length : 2 + visiblePages.length);
 
   return (
     <div className="space-y-6">
@@ -1020,6 +1080,27 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             </div>
           )}
         </div>
+
+        {/* Row 3: Page Customization / Filter Controls */}
+        {deletedPageIds.length > 0 && (
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 bg-amber-50/70 border border-amber-200 text-amber-950 text-xs rounded-xl">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-amber-100/80 rounded-lg text-amber-800 shrink-0">
+                <FileText size={14} />
+              </span>
+              <span>
+                Terdapat <strong>{deletedPageIds.length}</strong> halaman lampiran disembunyikan/dihapus dari cetakan PDF ini.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeletedPageIds([])}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition cursor-pointer self-start sm:self-center shrink-0"
+            >
+              Pulihkan Semua Halaman
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Share Modal Dialog Box */}
@@ -1156,22 +1237,23 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         
         {/* ================= PAGE 1: BUKTI PENGELUARAN KAS / BANK ================= */}
         {(activeTab === 'both' || activeTab === 'pengajuan') && (
-          <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
-            
-            {/* Header Block Left (Logo) & Right (Code & Tanggal) */}
-            <div className="flex justify-between items-start mb-6">
-              <NusantaraLogo size="md" className="items-start text-left" companyName={userProfile?.companyName} />
+          <PageScaleWrapper isLandscape={false}>
+            <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
+              
+              {/* Header Block Left (Logo) & Right (Code & Tanggal) */}
+              <div className="flex justify-between items-start mb-6">
+                <NusantaraLogo size="md" className="items-start text-left" companyName={userProfile?.companyName} />
 
-              <div className="flex flex-col items-end pt-2">
-                {/* Double border or standard rectangular HO code box */}
-                <div className="border border-black px-8 py-1.5 font-bold text-base text-black bg-stone-50 mb-2 min-w-[120px] text-center font-mono">
-                  {submission.kode}
-                </div>
-                <div className="text-xs text-black font-semibold">
-                  Tanggal : <span className="font-normal">{formatDateIndonesian(submission.tanggal)}</span>
+                <div className="flex flex-col items-end pt-2">
+                  {/* Double border or standard rectangular HO code box */}
+                  <div className="border border-black px-8 py-1.5 font-bold text-base text-black bg-stone-50 mb-2 min-w-[120px] text-center font-mono">
+                    {submission.kode}
+                  </div>
+                  <div className="text-xs text-black font-semibold">
+                    Tanggal : <span className="font-normal">{formatDateIndonesian(submission.tanggal)}</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
             {/* Document Title Block */}
             <div className="border-[2px] border-black bg-white py-2.5 text-center mb-6">
@@ -1299,7 +1381,8 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
 
 
-          </div>
+            </div>
+          </PageScaleWrapper>
         )}
 
         {/* Divider for Screen View, hidden during printing */}
@@ -1311,13 +1394,14 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
         {/* ================= PAGE 2: FORMULIR PENGAJUAN HO ================= */}
         {(activeTab === 'both' || activeTab === 'pengajuan') && (
-          <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
-            
-            {/* Header Area */}
-            <div className="flex justify-between items-start mb-6">
-              {/* Logo reconstructed with exact details */}
-              <NusantaraLogo size="md" className="items-start text-left" companyName={userProfile?.companyName} />
-            </div>
+          <PageScaleWrapper isLandscape={false}>
+            <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
+              
+              {/* Header Area */}
+              <div className="flex justify-between items-start mb-6">
+                {/* Logo reconstructed with exact details */}
+                <NusantaraLogo size="md" className="items-start text-left" companyName={userProfile?.companyName} />
+              </div>
 
             {/* Document Title Block */}
             <div className="border-[2px] border-black bg-[#D9D9D9] py-2.5 text-center mb-6">
@@ -1414,6 +1498,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             </div>
 
           </div>
+          </PageScaleWrapper>
         )}
 
         {/* Loading state indicator on screen only */}
@@ -1488,16 +1573,30 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                 </div>
               )}
 
-              {/* Responsive container matching orientation format on screen & print */}
-              <div 
-                className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
-                  isLandscape 
-                    ? 'w-[297mm] min-h-[210mm] h-[210mm] print-landscape' 
-                    : 'w-[210mm] min-h-[297mm] h-[297mm] print-portrait'
-                }`}
-              >
-                {page.isPlaceholder && page.fileId ? (
-                  <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100">
+              <PageScaleWrapper isLandscape={isLandscape}>
+                {/* Responsive container matching orientation format on screen & print */}
+                <div 
+                  className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
+                    isLandscape 
+                      ? 'w-[297mm] min-h-[210mm] h-[210mm] print-landscape' 
+                      : 'w-[210mm] min-h-[297mm] h-[297mm] print-portrait'
+                  }`}
+                >
+                  {/* Floating Action for Hiding / Deleting Page from PDF Print */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletedPageIds(prev => [...prev, page.id]);
+                    }}
+                    className="absolute top-4 right-4 bg-rose-600 hover:bg-rose-700 text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-rose-500 transition-all z-20 cursor-pointer print:hidden hover:scale-105 active:scale-95"
+                    title="Hapus Halaman Ini"
+                  >
+                    <Trash2 size={13} />
+                    <span>Hapus Halaman</span>
+                  </button>
+
+                  {page.isPlaceholder && page.fileId ? (
+                    <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100">
                     {/* Native Google Drive Embedded Viewer */}
                     <iframe
                       src={`https://drive.google.com/file/d/${page.fileId}/preview`}
@@ -1662,6 +1761,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   />
                 )}
               </div>
+              </PageScaleWrapper>
             </React.Fragment>
           );
         })}
