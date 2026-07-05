@@ -32,8 +32,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   const [regRole, setRegRole] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regCompanyId, setRegCompanyId] = useState('nmsa');
-  const [regCompanyName, setRegCompanyName] = useState('PT Nusantara Mineral Sukses Abadi');
+  const [regCompanyId, setRegCompanyId] = useState('');
+  const [regCompanyName, setRegCompanyName] = useState('');
+  const [regAppId, setRegAppId] = useState('');
 
   // Form Fields - Firebase Config
   const [apiKey, setApiKey] = useState('');
@@ -180,6 +181,25 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       setStatusMsg({
         type: 'error',
         text: 'Password minimal terdiri dari 6 karakter.'
+      });
+      return;
+    }
+
+    const activeConfig = getStoredFirebaseConfig();
+    const activeAppId = activeConfig?.appId || '';
+
+    if (!regAppId.trim()) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Kode App ID wajib diisi untuk verifikasi database.'
+      });
+      return;
+    }
+
+    if (regAppId.trim() !== activeAppId) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Kode App ID salah! Anda harus mengisi Kode App ID dengan benar agar dapat terhubung dengan data perusahaan yang sudah ada. Jika Anda ingin membuat database di firebase yang baru, klik tombol "Database Baru" di samping kolom input.'
       });
       return;
     }
@@ -451,6 +471,47 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
                 />
               </div>
 
+              <div className="space-y-1">
+                <label className="block text-[10px] font-mono font-black text-stone-500 uppercase tracking-widest">
+                  KODE APP ID (VERIFIKASI DATABASE)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={regAppId}
+                    onChange={(e) => setRegAppId(e.target.value)}
+                    placeholder="Masukkan Kode App ID..."
+                    disabled={isLoading}
+                    className="flex-1 px-3.5 py-2 bg-stone-50 border border-stone-250 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 focus:bg-white text-stone-850 placeholder:text-stone-300 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('config');
+                      setApiKey('');
+                      setProjectId('');
+                      setAuthDomain('');
+                      setStorageBucket('');
+                      setMessagingSenderId('');
+                      setAppId('');
+                      setStatusMsg({
+                        type: 'info',
+                        text: 'Silakan isi parameter Firebase di bawah untuk membuat atau menghubungkan ke database baru.'
+                      });
+                    }}
+                    className="px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-[#D4AF37] border border-stone-800 rounded-xl text-xs font-mono font-bold transition flex items-center gap-1 shrink-0 cursor-pointer shadow-3xs"
+                    title="Buat / Setup Database Firebase Baru"
+                  >
+                    <Database size={13} />
+                    <span>Database Baru</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-stone-400">
+                  Wajib mengisi Kode App ID dengan benar jika ingin bergabung dengan data yang sudah ada.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="block text-[10px] font-mono font-black text-stone-500 uppercase tracking-widest">
@@ -620,12 +681,22 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
                 Hubungkan & Aktifkan Firebase
               </button>
 
-              {isConfigured && (
+               {isConfigured && (
                 <button
                   type="button"
                   onClick={() => {
                     setMode('login');
                     setStatusMsg(null);
+                    // Reload stored config to restore previous values
+                    const config = getStoredFirebaseConfig();
+                    if (config) {
+                      setApiKey(config.apiKey || '');
+                      setProjectId(config.projectId || '');
+                      setAuthDomain(config.authDomain || '');
+                      setStorageBucket(config.storageBucket || '');
+                      setMessagingSenderId(config.messagingSenderId || '');
+                      setAppId(config.appId || '');
+                    }
                   }}
                   className="w-full bg-white hover:bg-stone-50 text-stone-600 border border-stone-250 font-bold py-2 px-4 rounded-xl text-xs uppercase tracking-wider font-mono text-center transition block"
                 >
@@ -647,7 +718,28 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
           <button
             type="button"
             onClick={() => {
-              setMode(mode === 'config' ? 'login' : 'config');
+              if (mode === 'config') {
+                setMode('login');
+                // Reload stored config to restore previous values
+                const config = getStoredFirebaseConfig();
+                if (config) {
+                  setApiKey(config.apiKey || '');
+                  setProjectId(config.projectId || '');
+                  setAuthDomain(config.authDomain || '');
+                  setStorageBucket(config.storageBucket || '');
+                  setMessagingSenderId(config.messagingSenderId || '');
+                  setAppId(config.appId || '');
+                }
+              } else {
+                setMode('config');
+                // Clear inputs for entering a brand new database configuration
+                setApiKey('');
+                setProjectId('');
+                setAuthDomain('');
+                setStorageBucket('');
+                setMessagingSenderId('');
+                setAppId('');
+              }
               setStatusMsg(null);
             }}
             className="flex items-center gap-1 px-2.5 py-1 text-[9px] font-bold font-mono uppercase tracking-wider text-stone-500 hover:text-stone-800 bg-stone-100 border border-stone-250 rounded-lg hover:bg-stone-200 transition cursor-pointer"
