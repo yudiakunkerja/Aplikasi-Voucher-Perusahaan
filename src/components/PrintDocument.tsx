@@ -11,6 +11,7 @@ interface PrintDocumentProps {
   onEdit?: () => void;
   userProfile?: any;
   initialTab?: 'both' | 'pengajuan' | 'pengeluaran' | 'lampiran';
+  onUpdateSubmission?: (updated: Submission) => void;
 }
 
 const getGoogleDriveEmbedUrl = (url: string): string => {
@@ -301,7 +302,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
             width: `${targetWidth * scale}px`,
             height: `${targetHeight * scale}px`,
           }}
-          className="relative overflow-hidden flex items-start justify-center print:w-auto print:h-auto print:overflow-visible"
+          className="relative overflow-hidden flex items-start justify-start print:w-auto print:h-auto print:overflow-visible"
         >
           <div 
             style={{ 
@@ -329,7 +330,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
   );
 };
 
-export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab }) => {
+export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack, onEdit, userProfile, initialTab, onUpdateSubmission }) => {
   const [activeTab, setActiveTab] = useState<'both' | 'pengajuan' | 'pengeluaran' | 'lampiran'>(
     initialTab || 'both'
   );
@@ -353,6 +354,11 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   // Real-time synced file state from Google Drive
   const [syncedDriveFiles, setSyncedDriveFiles] = useState<any[]>(() => submission.googleDriveFiles || []);
   const [isSyncingDriveFiles, setIsSyncingDriveFiles] = useState(false);
+
+  // Sync deleted pages state when submission prop changes
+  useEffect(() => {
+    setDeletedPageIds(submission.deletedPageIds || []);
+  }, [submission.deletedPageIds]);
 
   // Sync files from Google Drive in real-time
   useEffect(() => {
@@ -921,6 +927,12 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         userProfile?.companyId || 'nmsa',
         userProfile?.companyName || 'PT Nusantara Mineral Sukses Abadi'
       );
+      
+      // Notify parent of the updated submission to keep app state synchronized
+      if (onUpdateSubmission) {
+        onUpdateSubmission(updatedSubmission);
+      }
+
       // Trigger success state
       setSavePagesSuccess(true);
       setTimeout(() => setSavePagesSuccess(false), 3000);

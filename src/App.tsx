@@ -596,6 +596,7 @@ export default function App() {
                 }}
                 initialTab="both"
                 onBack={() => navigateTo('/')}
+                onUpdateSubmission={(updated) => setSharedSubmission(updated)}
               />
             </div>
           ) : (
@@ -909,6 +910,11 @@ export default function App() {
             onEdit={() => {
               setEditingSubmission(activeSubmission);
               setView('form');
+            }}
+            onUpdateSubmission={(updated) => {
+              setActiveSubmission(updated);
+              const updatedList = submissions.map((s) => (s.id === updated.id ? updated : s));
+              saveSubmissionsToStorage(updatedList);
             }}
           />
         )}
