@@ -1846,7 +1846,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                           : fileObj?.docType === 'merged_all' ? 'Gabungan Dokumen Utama'
                           : `Lampiran B${page.fileIndex + 1}`;
 
-          const isLandscape = page.isLandscape === true;
+          const isLandscape = false;
 
           return (
             <React.Fragment key={page.id}>
@@ -1899,7 +1899,14 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   {page.isPlaceholder && page.fileId ? (
                     <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100 overflow-hidden">
                     {/* Native Google Drive Embedded Viewer */}
-                    <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 210/297 : 1})` }}>
+                    <div 
+                      className="absolute inset-0 m-auto flex items-center justify-center transition-all duration-300" 
+                      style={{ 
+                        transform: `rotate(${pageRotations[page.id] || 0}deg)`,
+                        width: (pageRotations[page.id] || 0) % 180 !== 0 ? '297mm' : '100%',
+                        height: (pageRotations[page.id] || 0) % 180 !== 0 ? '210mm' : '100%'
+                      }}
+                    >
                       <iframe
                         src={`https://drive.google.com/file/d/${page.fileId}/preview`}
                         className="w-full h-full border-0 z-0 bg-stone-50"
@@ -2057,11 +2064,18 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                     </div>
                   </div>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 210/297 : 1})` }}>
+                  <div 
+                    className="absolute inset-0 m-auto flex items-center justify-center transition-all duration-300" 
+                    style={{ 
+                      transform: `rotate(${pageRotations[page.id] || 0}deg)`,
+                      width: (pageRotations[page.id] || 0) % 180 !== 0 ? '297mm' : '100%',
+                      height: (pageRotations[page.id] || 0) % 180 !== 0 ? '210mm' : '100%'
+                    }}
+                  >
                     <img
                       src={page.dataUrl}
                       alt={page.fileName}
-                      className="max-w-full max-h-full object-contain"
+                      className="w-full h-full object-contain"
                     />
                   </div>
                 )}
@@ -2099,7 +2113,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             border: none !important;
           }
           /* Ensure wrapper elements do not carry external paddings/spacings in print content */
-          .space-y-6, .space-y-8 {
+          .space-y-6 > * + *, .space-y-8 > * + * {
             margin: 0 !important;
             padding: 0 !important;
             gap: 0 !important;
@@ -2112,20 +2126,10 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             border: none !important;
             padding: 0 !important;
             margin: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
             box-shadow: none !important;
           }
           .page-break.print-landscape {
             page: landscape-page !important;
-          }
-          .page-break img {
-            width: 100% !important;
-            height: auto !important;
-            display: block !important;
-            max-width: 100% !important;
-            max-height: none !important;
           }
           .print-force-page-break {
             page-break-after: always !important;
