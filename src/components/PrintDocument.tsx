@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Submission } from '../types';
 import { formatRupiah, formatDateIndonesian, numberToTerbilang } from '../utils';
 import { NusantaraLogo } from './NusantaraLogo';
-import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send, Edit2, Trash, Trash2 } from 'lucide-react';
+import { Printer, ArrowLeft, Layers, FileText, CheckCircle, Cloud, Loader2, Lock, ShieldAlert, RefreshCw, Share2, Copy, Check, Send, Edit2, Trash, Trash2, RotateCw } from 'lucide-react';
 import { getStoredGoogleDriveToken, googleDriveLogin, saveSubmissionToFirestore } from '../firebase';
 
 interface PrintDocumentProps {
@@ -341,6 +341,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   );
   const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
   const [deletedPageIds, setDeletedPageIds] = useState<string[]>([]);
+  const [pageRotations, setPageRotations] = useState<{[key: string]: number}>({});
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isSavingPages, setIsSavingPages] = useState(false);
   const [savePagesSuccess, setSavePagesSuccess] = useState(false);
@@ -1867,30 +1868,45 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                       : 'w-[210mm] min-h-[297mm] h-[297mm] print-portrait'
                   }`}
                 >
-                  {/* Floating Action for Hiding / Deleting Page from PDF Print */}
+                  {/* Floating Action for Hiding / Deleting / Rotating Page from PDF Print */}
                   {!isSharedView && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletedPageIds(prev => [...prev, page.id]);
-                      }}
-                      className="absolute top-4 right-4 bg-rose-600 hover:bg-rose-700 text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-rose-500 transition-all z-20 cursor-pointer print:hidden hover:scale-105 active:scale-95"
-                      title="Hapus Halaman Ini"
-                    >
-                      <Trash2 size={13} />
-                      <span>Hapus Halaman</span>
-                    </button>
+                    <div className="absolute top-4 right-4 flex gap-2 z-20 print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPageRotations(prev => ({ ...prev, [page.id]: ((prev[page.id] || 0) + 90) % 360 }));
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-blue-500 transition-all cursor-pointer hover:scale-105 active:scale-95"
+                        title="Putar Halaman"
+                      >
+                        <RotateCw size={13} />
+                        <span>Putar Halaman</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeletedPageIds(prev => [...prev, page.id]);
+                        }}
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-sans font-bold text-[11px] px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md border border-rose-500 transition-all cursor-pointer hover:scale-105 active:scale-95"
+                        title="Hapus Halaman Ini"
+                      >
+                        <Trash2 size={13} />
+                        <span>Hapus Halaman</span>
+                      </button>
+                    </div>
                   )}
 
                   {page.isPlaceholder && page.fileId ? (
-                    <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100">
+                    <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100 overflow-hidden">
                     {/* Native Google Drive Embedded Viewer */}
-                    <iframe
-                      src={`https://drive.google.com/file/d/${page.fileId}/preview`}
-                      className="w-full h-full border-0 z-0 bg-stone-50"
-                      allow="autoplay"
-                      referrerPolicy="no-referrer"
-                    />
+                    <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg)` }}>
+                      <iframe
+                        src={`https://drive.google.com/file/d/${page.fileId}/preview`}
+                        className="w-full h-full border-0 z-0 bg-stone-50"
+                        allow="autoplay"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
 
                     {/* Floating Controls Overlay specifically configured for quick sync and manual copy overrides */}
                     <div className="absolute bottom-4 left-4 right-4 bg-stone-900/90 hover:bg-stone-950/95 text-white rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xl backdrop-blur-md z-10 print:hidden transition-all duration-150 border border-stone-800">
@@ -2041,11 +2057,13 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                     </div>
                   </div>
                 ) : (
-                  <img
-                    src={page.dataUrl}
-                    alt={page.fileName}
-                    className="max-w-full max-h-full object-contain"
-                  />
+                  <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg)` }}>
+                    <img
+                      src={page.dataUrl}
+                      alt={page.fileName}
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  </div>
                 )}
               </div>
               </PageScaleWrapper>
