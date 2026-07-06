@@ -1768,6 +1768,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
                     setInvoiceNumber('');
                     setInvoiceDate('');
                     setIsPettyCash(true);
+                    setJenisPengajuan('Petty Cash Lapangan');
                   }
                 }}
               >
@@ -1819,6 +1820,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
                     setInvoiceNumber('');
                     setInvoiceDate('');
                     setIsPettyCash(true);
+                    setJenisPengajuan('Petty Cash Lapangan');
                   }}
                   className={`px-3 py-1 text-[10.5px] font-bold rounded-lg transition-all duration-155 cursor-pointer ${
                     isPettyCash
