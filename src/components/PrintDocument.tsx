@@ -327,8 +327,8 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
 
   // Normal scale (no scaling needed)
   return (
-    <div ref={containerRef} className="w-full flex flex-col items-center print:block print:w-auto">
-      <div className="shrink-0 print:block print:w-auto print:h-auto print:overflow-visible">
+    <div ref={containerRef} className="w-full flex flex-col items-center print:!block print:!w-auto">
+      <div className="shrink-0 print:!block print:!w-auto print:!h-auto print:!overflow-visible">
         {children}
       </div>
     </div>
@@ -429,10 +429,12 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
   const activeBillFiles = billFiles.length > 0 ? billFiles : legacyFiles;
 
   const paymentProofFile = submission.buktiPembayaran || displayFiles.find((f: any) => f.isBuktiPembayaran);
+  const pettyCashReportFile = submission.pettyCashFile || displayFiles.find((f: any) => f.docType === 'petty_cash_report');
   
   const attachmentFiles = [
     ...activeBillFiles,
-    ...(paymentProofFile ? [{ ...paymentProofFile, isBuktiPembayaran: true }] : [])
+    ...(paymentProofFile ? [{ ...paymentProofFile, isBuktiPembayaran: true }] : []),
+    ...(pettyCashReportFile ? [{ ...pettyCashReportFile, docType: 'petty_cash_report' }] : [])
   ];
 
   // Check which files are owned by the current user vs others in Drive
@@ -1520,7 +1522,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         {/* ================= PAGE 1: BUKTI PENGELUARAN KAS / BANK ================= */}
         {(activeTab === 'both' || activeTab === 'pengajuan') && (
           <PageScaleWrapper isLandscape={false}>
-            <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
+            <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break">
               
               {/* Header Block Left (Logo) & Right (Code & Tanggal) */}
               <div className="flex justify-between items-start mb-6">
@@ -1677,7 +1679,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         {/* ================= PAGE 2: FORMULIR PENGAJUAN HO ================= */}
         {(activeTab === 'both' || activeTab === 'pengajuan') && (
           <PageScaleWrapper isLandscape={false}>
-            <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break">
+            <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break">
               
               {/* Header Area */}
               <div className="flex justify-between items-start mb-6">
@@ -1839,6 +1841,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                           : fileObj?.docType === 'bukti_pembayaran_batubara' ? 'P.Batubara'
                           : fileObj?.docType === 'bukti_shipment_tongkang_founder' ? 'S.Tongkang'
                           : fileObj?.docType === 'bukti_pajak_trader_founder' ? 'Pajak Trader'
+                          : fileObj?.docType === 'petty_cash_report' ? 'LPJ Petty Cash'
                           : fileObj?.docType === 'merged_all' ? 'Gabungan Dokumen Utama'
                           : `Lampiran B${page.fileIndex + 1}`;
 
@@ -1858,7 +1861,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
               <PageScaleWrapper isLandscape={isLandscape}>
                 {/* Responsive container matching orientation format on screen & print */}
                 <div 
-                  className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 page-break relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
+                  className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
                     isLandscape 
                       ? 'w-[297mm] min-h-[210mm] h-[210mm] print-landscape' 
                       : 'w-[210mm] min-h-[297mm] h-[297mm] print-portrait'
@@ -2106,7 +2109,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             max-width: 100% !important;
             max-height: none !important;
           }
-          .page-break:not(:last-child) {
+          .page-break {
             page-break-after: always !important;
             break-after: page !important;
           }
