@@ -256,7 +256,7 @@ const syncDriveFilesToAppFormat = (driveFiles: any[], cleanJenis: string, cleanP
 };
 
 // PageScaleWrapper wraps a print sheet to fit the responsive layout of the viewport on screen while remaining unscaled in print
-const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: boolean }> = ({ children, isLandscape }) => {
+const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: boolean; isLastPage?: boolean }> = ({ children, isLandscape, isLastPage }) => {
   const [scale, setScale] = useState(1);
   const containerRef = React.useRef<HTMLDivElement>(null);
   
@@ -300,7 +300,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
     return (
       <div 
         ref={containerRef} 
-        className="w-full flex flex-col items-center justify-center print:!block print:!w-auto print:!h-auto print:!overflow-visible"
+        className={`w-full flex flex-col items-center justify-center print:!block print:!w-auto print:!h-auto print:!overflow-visible ${!isLastPage ? "print-force-page-break" : ""}`}
       >
         <div 
           style={{ 
@@ -327,7 +327,7 @@ const PageScaleWrapper: React.FC<{ children: React.ReactNode; isLandscape?: bool
 
   // Normal scale (no scaling needed)
   return (
-    <div ref={containerRef} className="w-full flex flex-col items-center print:!block print:!w-auto">
+    <div ref={containerRef} className={`w-full flex flex-col items-center print:!block print:!w-auto ${!isLastPage ? "print-force-page-break" : ""}`}>
       <div className="shrink-0 print:!block print:!w-auto print:!h-auto print:!overflow-visible">
         {children}
       </div>
@@ -1522,7 +1522,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
         
         {/* ================= PAGE 1: BUKTI PENGELUARAN KAS / BANK ================= */}
         {(activeTab === 'both' || activeTab === 'pengajuan') && (
-          <PageScaleWrapper isLandscape={false}>
+          <PageScaleWrapper isLandscape={false} isLastPage={1 === totalPagesCount}>
             <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break">
               
               {/* Header Block Left (Logo) & Right (Code & Tanggal) */}
@@ -1679,7 +1679,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
 
         {/* ================= PAGE 2: FORMULIR PENGAJUAN HO ================= */}
         {(activeTab === 'both' || activeTab === 'pengajuan') && (
-          <PageScaleWrapper isLandscape={false}>
+          <PageScaleWrapper isLandscape={false} isLastPage={2 === totalPagesCount}>
             <div className="w-[210mm] min-h-[297mm] bg-white p-[15mm] border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break">
               
               {/* Header Area */}
@@ -1859,7 +1859,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                 </div>
               )}
 
-              <PageScaleWrapper isLandscape={isLandscape}>
+              <PageScaleWrapper isLandscape={isLandscape} isLastPage={((activeTab === "both" || activeTab === "pengajuan") ? 2 : 0) + idx + 1 === totalPagesCount}>
                 {/* Responsive container matching orientation format on screen & print */}
                 <div 
                   className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
@@ -1899,7 +1899,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   {page.isPlaceholder && page.fileId ? (
                     <div className="w-full h-full relative flex flex-col items-center justify-between bg-stone-100 overflow-hidden">
                     {/* Native Google Drive Embedded Viewer */}
-                    <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg)` }}>
+                    <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 210/297 : 1})` }}>
                       <iframe
                         src={`https://drive.google.com/file/d/${page.fileId}/preview`}
                         className="w-full h-full border-0 z-0 bg-stone-50"
@@ -2057,7 +2057,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                     </div>
                   </div>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg)` }}>
+                  <div className="w-full h-full flex items-center justify-center transition-transform duration-300" style={{ transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 210/297 : 1})` }}>
                     <img
                       src={page.dataUrl}
                       alt={page.fileName}
@@ -2127,7 +2127,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             max-width: 100% !important;
             max-height: none !important;
           }
-          .page-break {
+          .print-force-page-break {
             page-break-after: always !important;
             break-after: page !important;
           }
