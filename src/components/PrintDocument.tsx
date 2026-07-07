@@ -1862,7 +1862,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
               <PageScaleWrapper isLandscape={isLandscape} isLastPage={((activeTab === "both" || activeTab === "pengajuan") ? 2 : 0) + idx + 1 === totalPagesCount}>
                 {/* Responsive container matching orientation format on screen & print */}
                 <div 
-                  className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
+                  className={`bg-white border border-stone-250 shadow-md rounded-xl print:shadow-none print:border-none print:rounded-none print:!p-0 print:!m-0 page-break is-image-page relative overflow-hidden bg-stone-50/10 flex items-center justify-center transition-all duration-200 ${
                     isLandscape 
                       ? 'w-[297mm] min-h-[210mm] h-[210mm] print-landscape' 
                       : 'w-[210mm] min-h-[297mm] h-[297mm] print-portrait'
@@ -2131,15 +2131,20 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             min-height: 0 !important;
             box-shadow: none !important;
           }
-          .page-break.print-landscape {
+          .page-break.is-image-page {
+            height: 272mm !important;
+          }
+          .page-break.is-image-page.print-landscape {
+            height: 185mm !important;
             page: landscape-page !important;
           }
           .page-break img {
             width: 100% !important;
-            height: auto !important;
+            height: 100% !important;
+            object-fit: contain !important;
             display: block !important;
             max-width: 100% !important;
-            max-height: none !important;
+            max-height: 100% !important;
           }
           .print-force-page-break {
             page-break-after: always !important;
