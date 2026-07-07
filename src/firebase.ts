@@ -811,6 +811,21 @@ export const getStoredGoogleDriveToken = (): string | null => {
 
 // Helper function to silently auto-refresh token if it's expired or about to expire
 export const ensureValidDriveToken = async (): Promise<string | null> => {
+  // OPSI B: Coba ambil token dari Service Account (Backend) terlebih dahulu
+  try {
+    const res = await fetch('/api/drive-token');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.accessToken) {
+        console.log('✅ Menggunakan Service Account untuk Google Drive');
+        return data.accessToken;
+      }
+    }
+  } catch (err) {
+    console.log('Service Account token tidak tersedia, menggunakan Opsi A (User Login).');
+  }
+
+  // OPSI A: Fallback ke token dari localStorage (Login manual)
   let token = getStoredGoogleDriveToken();
   if (token) return token; // Still valid
 

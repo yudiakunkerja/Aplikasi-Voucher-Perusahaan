@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { google } from "googleapis";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -131,6 +132,46 @@ PENTING: Seluruh nominal uang harus diekstrak sebagai angka (number) tanpa titik
       error: "Gagal memproses kwitansi menggunakan AI. Periksa kembali kualitas dokumen atau berkas Anda.",
       details: error.message 
     });
+  }
+});
+
+// Endpoint to get Service Account Drive token
+app.get("/api/drive-token", async (req, res) => {
+  try {
+    let clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+
+    if (process.env.GOOGLE_CREDENTIALS) {
+      const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+      clientEmail = creds.client_email;
+      privateKey = creds.private_key;
+    }
+
+    if (!clientEmail || !privateKey) {
+       return res.status(500).json({ error: "Kredensial Service Account belum dikonfigurasi di server." });
+    }
+
+    if (privateKey.includes("\\n")) {
+      privateKey = privateKey.replace(/\\n/g, "\n");
+    }
+
+    const jwtClient = new google.auth.JWT(
+      clientEmail,
+      undefined,
+      privateKey,
+      ['https://www.googleapis.com/auth/drive']
+    );
+
+    const tokens = await jwtClient.authorize();
+    
+    if (tokens.access_token) {
+      return res.json({ success: true, accessToken: tokens.access_token });
+    } else {
+      throw new Error("Gagal mendapatkan akses token dari Google");
+    }
+  } catch (error: any) {
+    console.error("Error generating drive token:", error);
+    return res.status(500).json({ error: "Gagal membuat akses token Drive", details: error.message });
   }
 });
 
