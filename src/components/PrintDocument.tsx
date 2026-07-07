@@ -1902,9 +1902,9 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                     <div 
                       className="absolute inset-0 m-auto flex items-center justify-center transition-all duration-300" 
                       style={{ 
-                        transform: `rotate(${pageRotations[page.id] || 0}deg)`,
-                        width: (pageRotations[page.id] || 0) % 180 !== 0 ? '297mm' : '100%',
-                        height: (pageRotations[page.id] || 0) % 180 !== 0 ? '210mm' : '100%'
+                        transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 297/210 : 1})`,
+                        width: '100%',
+                        height: '100%'
                       }}
                     >
                       <iframe
@@ -2067,9 +2067,9 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   <div 
                     className="absolute inset-0 m-auto flex items-center justify-center transition-all duration-300" 
                     style={{ 
-                      transform: `rotate(${pageRotations[page.id] || 0}deg)`,
-                      width: (pageRotations[page.id] || 0) % 180 !== 0 ? '297mm' : '100%',
-                      height: (pageRotations[page.id] || 0) % 180 !== 0 ? '210mm' : '100%'
+                      transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 297/210 : 1})`,
+                      width: '100%',
+                      height: '100%'
                     }}
                   >
                     <img

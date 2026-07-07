@@ -601,6 +601,7 @@ export interface ConnectedDrive {
   quotaLimit: number;  // Bytes
   lastChecked: string; // ISO String
   isExpired?: boolean;
+  issuedAt?: number;   // Epoch timestamp of token issue
 }
 
 let googleDriveTokenMemory: string | null = null;
@@ -782,6 +783,13 @@ export const getStoredGoogleDriveToken = (): string | null => {
   // Find first active, unexpired drive with at least 15MB free space left
   const availableDrive = drives.find(d => {
     if (d.isExpired) return false;
+    
+    // Check if token is older than 55 minutes (3300 seconds)
+    const tokenAge = Date.now() - (d.issuedAt || 0);
+    if (d.issuedAt && tokenAge > 3300 * 1000) {
+      return false; // Token has expired or is about to expire
+    }
+
     const remainingBytes = d.quotaLimit - d.quotaUsed;
     return remainingBytes > 15 * 1024 * 1024; // 15MB
   });
@@ -790,9 +798,34 @@ export const getStoredGoogleDriveToken = (): string | null => {
     return availableDrive.accessToken;
   }
 
-  // If all are full or expired, fallback to the first active one, or the very first one
-  const fallbackDrive = drives.find(d => !d.isExpired) || drives[0];
+  // If all are full or expired, fallback to the first active one that isn't expired by time
+  const fallbackDrive = drives.find(d => {
+    if (d.isExpired) return false;
+    const tokenAge = Date.now() - (d.issuedAt || 0);
+    if (d.issuedAt && tokenAge > 3300 * 1000) return false;
+    return true;
+  });
+  
   return fallbackDrive ? fallbackDrive.accessToken : null;
+};
+
+// Helper function to silently auto-refresh token if it's expired or about to expire
+export const ensureValidDriveToken = async (): Promise<string | null> => {
+  let token = getStoredGoogleDriveToken();
+  if (token) return token; // Still valid
+
+  // If we reach here, it means tokens are expired. Try to auto-refresh the last active account.
+  const lastEmail = localStorage.getItem('NUSANTARA_LAST_ACTIVE_EMAIL');
+  if (lastEmail) {
+    try {
+      console.log('🔄 Auto-refreshing Google Drive token in the background...');
+      const result = await googleDriveLogin(lastEmail, false);
+      return result.accessToken;
+    } catch (err) {
+      console.warn('⚠️ Auto-refresh failed, user may need to manually click connect again:', err);
+    }
+  }
+  return null;
 };
 
 export const googleDriveLogin = async (
@@ -898,7 +931,8 @@ export const googleDriveLogin = async (
       quotaUsed: driveDetails.quotaUsed,
       quotaLimit: driveDetails.quotaLimit,
       lastChecked: new Date().toISOString(),
-      isExpired: false
+      isExpired: false,
+      issuedAt: Date.now()
     };
 
     // Replace if email exists, otherwise index appends

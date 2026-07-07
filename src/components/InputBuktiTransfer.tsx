@@ -8,7 +8,8 @@ import {
   getStoredGoogleDriveToken,
   setGoogleDriveToken,
   getConnectedDrives,
-  saveActivityLogToFirestore
+  saveActivityLogToFirestore,
+  ensureValidDriveToken
 } from '../firebase';
 import { DriveAccountsManager } from './DriveAccountsManager';
 import { formatRupiah, formatDateIndonesian, convertImageToPdf, compressImage } from '../utils';
@@ -494,7 +495,7 @@ export const InputBuktiTransfer: React.FC<InputBuktiTransferProps> = ({
         )
       ];
 
-      const token = getStoredGoogleDriveToken();
+      const token = await ensureValidDriveToken();
       if (token && isDriveConnected) {
         setSaveProgress('Menghubungkan ke layanan Google Drive...');
         

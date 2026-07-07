@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Submission, REQUIRED_TRANSACTION_DOCS } from '../types';
 import { 
   getStoredGoogleDriveToken, 
+  ensureValidDriveToken,
   googleDriveLogin, 
   saveSubmissionToFirestore,
   getConnectedDrives,
@@ -305,7 +306,7 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
   };
 
   const handleCleanDriveTrash = async () => {
-    const token = getStoredGoogleDriveToken();
+    const token = await ensureValidDriveToken();
     if (!token) {
       setErrorLog('Google Drive belum terhubung. Hubungkan akun terlebih dahulu.');
       return;
@@ -452,7 +453,7 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
   };
 
   const handleDeduplicateFiles = async () => {
-    const token = getStoredGoogleDriveToken();
+    const token = await ensureValidDriveToken();
     if (!token) {
       setErrorLog('Google Drive belum terhubung. Hubungkan akun terlebih dahulu.');
       return;
@@ -636,7 +637,7 @@ export const DriveSyncMass: React.FC<DriveSyncMassProps> = ({ submissions, onUpd
       return;
     }
 
-    const token = getStoredGoogleDriveToken();
+    const token = await ensureValidDriveToken();
     if (!token) {
       setErrorLog('Koneksi Google Drive terputus. Silakan hubungkan kembali.');
       return;

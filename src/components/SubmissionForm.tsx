@@ -4,7 +4,8 @@ import {
   googleDriveLogin, 
   getStoredGoogleDriveToken, 
   setGoogleDriveToken, 
-  getConnectedDrives 
+  getConnectedDrives,
+  ensureValidDriveToken
 } from '../firebase';
 import { DriveAccountsManager } from './DriveAccountsManager';
 import { Trash2, Plus, ArrowLeft, Save, AlertCircle, Sparkles, Cloud, Loader2, FileText, Coins, FileUp, ExternalLink } from 'lucide-react';
@@ -575,7 +576,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
           setFileToDeleteStatus('deleting');
           const fileId = extractGoogleDriveFileId(item.url || '');
           if (fileId) {
-            const token = getStoredGoogleDriveToken();
+            const token = await ensureValidDriveToken();
             if (token) {
               try {
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
@@ -629,7 +630,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
           setFileToDeleteStatus('deleting');
           const fileId = extractGoogleDriveFileId(buktiPembayaranDrive.url);
           if (fileId) {
-            const token = getStoredGoogleDriveToken();
+            const token = await ensureValidDriveToken();
             if (token) {
               try {
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
@@ -682,7 +683,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
           setFileToDeleteStatus('deleting');
           const fileId = extractGoogleDriveFileId(pettyCashDriveFile.url);
           if (fileId) {
-            const token = getStoredGoogleDriveToken();
+            const token = await ensureValidDriveToken();
             if (token) {
               try {
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
@@ -946,7 +947,8 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
       let finalPettyCashFile: { url: string; name: string } | undefined = undefined;
       let targetFolderId: string | undefined = undefined;
 
-      const token = getStoredGoogleDriveToken();
+      // Ensure we have a valid token (auto-refreshes if needed before starting upload)
+      const token = await ensureValidDriveToken();
       if (token) {
         setSaveProgress('Menghitung format tanggal pengajuan...');
         // 1. Resolve Year/Month/Day folder structure parameters
