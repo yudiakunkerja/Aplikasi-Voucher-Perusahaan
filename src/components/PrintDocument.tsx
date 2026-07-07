@@ -1902,7 +1902,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                     <div 
                       className="absolute inset-0 m-auto flex items-center justify-center transition-all duration-300" 
                       style={{ 
-                        transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 297/210 : 1})`,
+                        transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 210/297 : 1})`,
                         width: '100%',
                         height: '100%'
                       }}
@@ -2067,7 +2067,7 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
                   <div 
                     className="absolute inset-0 m-auto flex items-center justify-center transition-all duration-300" 
                     style={{ 
-                      transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 297/210 : 1})`,
+                      transform: `rotate(${pageRotations[page.id] || 0}deg) scale(${(pageRotations[page.id] || 0) % 180 !== 0 ? 210/297 : 1})`,
                       width: '100%',
                       height: '100%'
                     }}
@@ -2126,10 +2126,20 @@ export const PrintDocument: React.FC<PrintDocumentProps> = ({ submission, onBack
             border: none !important;
             padding: 0 !important;
             margin: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
             box-shadow: none !important;
           }
           .page-break.print-landscape {
             page: landscape-page !important;
+          }
+          .page-break img {
+            width: 100% !important;
+            height: auto !important;
+            display: block !important;
+            max-width: 100% !important;
+            max-height: none !important;
           }
           .print-force-page-break {
             page-break-after: always !important;
